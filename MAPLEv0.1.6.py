@@ -1,4 +1,5 @@
 import sys
+from sys import exit
 from math import log
 import argparse
 from time import time
@@ -757,7 +758,7 @@ def probVectTerminalNode(diffs):
 
 
 
-
+"""5.5.5 Estimating substitution rates"""
 #Update and normalize the mutation rate matrix, given new mutation counts
 def updateSubMatrix(pseudoMutCounts,model,oldMutMatrix): #,mutMatrixBLen,mutMatrixBLenAdjusted
 	mutMatrix=[[0.0,0.0,0.0,0.0],[0.0,0.0,0.0,0.0],[0.0,0.0,0.0,0.0],[0.0,0.0,0.0,0.0]]
@@ -802,8 +803,8 @@ def updateSubMatrix(pseudoMutCounts,model,oldMutMatrix): #,mutMatrixBLen,mutMatr
 
 
 
-
-
+"""5.4 Other partial likelihoods: Merge "upper-Left likelihoods" or "upper-right likelihoods" with "lower likelihoods" """
+"""5.3.2 Efficient calculation of likelihoods"""
 #merge two partial likelihood vectors, one from above, probVect1, and one from below, probVect2
 #unlike appendProb(), this function is not used on a large part of the tree at each placement, but only in a small neighbourhood;
 def mergeVectorsUpDown(probVect1,bLenUp,probVect2,bLenDown,mutMatrix):
@@ -1114,7 +1115,7 @@ def mergeVectorsUpDown(probVect1,bLenUp,probVect2,bLenDown,mutMatrix):
 
 
 
-
+"""5.3.2 Efficient calculation of likelihoods"""
 #merge two lower child partial likelihood vectors to create a new one 
 #(and also calculate the logLk of the merging if necessary, which is currently only useful for the root but could also be useful to calculate the overall total likelihood of the tree).
 def mergeVectors(probVect1,bLen1,probVect2,bLen2,mutMatrix,returnLK=False):
@@ -1239,7 +1240,7 @@ def mergeVectors(probVect1,bLen1,probVect2,bLen2,mutMatrix,returnLK=False):
 				else:
 					newVec=[0.0,0.0,0.0,0.0]
 					newVec[i1]=1.0
-
+				"""5.3.2 CASE 4: entry1 is a nucleotide and entry2 is "O" """
 				if entry2[0]==6: #entry1 is a nucleotide and entry2 is "O"
 					if totLen2:
 						for j in range4:
@@ -1557,10 +1558,11 @@ def updatePesudoCounts(probVect1,probVect2,pseudoMutCounts):
 
 
 
-
+"""
+5.5.3 Updating genome lists
+"""
 numNodes=[0,0,0,0,0]
-
-#Given a tree, and a final substitution rate matrix, re-calculate all genome lists within the tree according to this matrix.
+# Given a tree, and a final substitution rate matrix, re-calculate all genome lists within the tree according to this matrix.
 # this is useful once the matrix estimation has finished, to make sure all genome lists replect this matrix. 
 def reCalculateAllGenomeLists(root,mutMatrix, checkExistingAreCorrect=False,countNodes=False,countPseudoCounts=False,pseudoMutCounts=None,data=None):
 	#first pass to update all lower likelihoods.
@@ -1871,7 +1873,7 @@ def distancesFromRefPunishNs(data,samples=None):
 	return sampleDistances
 
 
-
+"""5.5.4 Dealing with nearly identical sequences"""
 #function to check is one sequence is less informative than another;
 #returns 0 when the 2 sequences are not comparable, otherwise returns 1 if the first is more informative or if they are identical, and 2 otherwise.
 def isMinorSequence(probVect1,probVect2):
@@ -2135,10 +2137,11 @@ def appendProb(probVectP,probVectC,bLen,mutMatrix):
 
 
 
-
+"""
+5.5.1 Finding the initial phylogenetic neighborhood for sample placement
+"""
 #number of samples that could have been placed as major of another sample but weren't due to sample placement order
 totalMissedMinors=[0]
-
 #function to find the best node in the tree where to append the new sample using initial lower threshold; traverses the tree from the root
 #  and tries to append the sample at each node and mid-branch nodes. Then, starting from the found appending position in the tree,
 # we will start a more intensive search
@@ -2146,7 +2149,7 @@ def findBestParentInitial(t1,diffs,sample,mutMatrix):
 	bestNodeSoFar=t1
 	bestLKdiff=float("-inf")
 	bestIsMidNode=False
-	bestUpLK=float("-inf")
+	bestUpLK=float("-inf") #MYRTHE: ?
 	bestDownLK=float("-inf")
 	nodesToVisit=[(t1,float("-inf"),0)]
 	while nodesToVisit:
@@ -2164,7 +2167,7 @@ def findBestParentInitial(t1,diffs,sample,mutMatrix):
 			if tryOtherBLen: #try also placing with a longer new terminal branch, which can be useful if the sample has many new mutations.
 				# this may become totally unnecessary if one will develop a derivative-based analytical branch length optimization.
 				newLKdiff2=appendProb(t1.probVectTotUp,diffs,oneMutBLen*bLenAdjustment,mutMatrix)
-				if newLKdiff2>LKdiff2:
+				if newLKdiff2>LKdiff2: #Myrthe
 					LKdiff2=newLKdiff2
 					adjusted=True
 				else:
@@ -2219,7 +2222,7 @@ def findBestParentInitial(t1,diffs,sample,mutMatrix):
 
 
 
-
+"""5.5.2 Zooming in on the phylogenetic neighborhood to finalize sample placement"""
 #function traversing the tree to find the best node in the tree where to re-append the given subtree (rooted at node.children[child]) to improve the topology of the current tree.
 # if topologyPhase=False, it will insted look for best appending position of a new sample to be added to the tree.
 # bestLKdiff is the best likelihood cost found for the current placement (after optimizing the branch length).
@@ -4306,6 +4309,7 @@ def placeSubtreeOnTree(node,newPartials,appendedNode,newBranchL,newChildLK,isMid
 			if LK0>LK1:
 				bestLen=False
 
+		"""Placing new subtree"""
 		#now create new internal node and append child to it
 		# if verbose or debugging:
 		# 	print("adding mid-branch; Original dist was "+str(node.dist)+" top distance is "+str(node.dist*bestSplit)+" bottom distance is "+str(node.dist*(1.0-bestSplit))+" and vector is ")
@@ -4767,7 +4771,7 @@ def placeSubtreeOnTree(node,newPartials,appendedNode,newBranchL,newChildLK,isMid
 
 
 
-
+"""5.6.3 SPR move finalization"""
 #remove node from the current position in the tree and re-attach it at a new given place new bestNode.
 # First remove node from the tree, then update the genome lists;
 # then find the exact best reattachment of node and update the genome lists again using function placeSubtreeOnTree().
@@ -4846,6 +4850,7 @@ def cutAndPasteNode(node,bestNode,isMidNode,attachmentBLen,bestLK,mutMatrix):
 		return newRoot
 
 
+"""5.6 Tree topology improvement"""
 # try to find a re-placement of a dirty node of the tree to improve the topology.
 # Cut out the subtree at this node, and look for somewhere else in the tree where to attach it (an SPR move).
 # To find the best location of the new re-attachment, we traverse the tree starting at the current attachment node, and for each node visited we evaluate the reattachment,
@@ -4933,6 +4938,7 @@ def traverseTreeForTopologyUpdate(node,mutMatrix,strictTopologyStopRules=strictT
 				#print(node.up.probVect)
 
 			#bestNodeSoFar , bestLKdiff , bestIsMidNode = findBestParentTopologyOld(parentNode,child,bestCurrentLK,bestCurrenBLen,mutMatrix)
+			"""5.6.2 SPR search """
 			bestNodeSoFar , bestLKdiff , bestIsMidNode = findBestParent(parentNode,child,bestCurrentLK,bestCurrenBLen,mutMatrix,strictTopologyStopRules=strictTopologyStopRules,allowedFailsTopology=allowedFailsTopology,thresholdLogLKtopology=thresholdLogLKtopology)
 			if bestLKdiff>thresholdProb2:
 				print("Strange, LK cost is positive")
@@ -5040,7 +5046,7 @@ def traverseTreeForTopologyUpdate(node,mutMatrix,strictTopologyStopRules=strictT
 	#	print("End of traverseTreeForTopologyUpdate, tree after cutAndPasteNode(): "+createBinaryNewick(newRoot))
 	return newRoot,totalImprovement
 
-
+"""5.6.1 Tree traversal loop for SPR initialization"""
 #traverse the tree (here the input "node" will usually be the root), and for each dirty node ancountered, call traverseTreeForTopologyUpdate() 
 # to attempt an SPR move by cutting the subtree rooted at this dirty node and trying to re-append it elsewhere.
 def startTopologyUpdates(node,mutMatrix,checkEachSPR=False,strictTopologyStopRules=strictTopologyStopRules,allowedFailsTopology=allowedFailsTopology,thresholdLogLKtopology=thresholdLogLKtopology,thresholdTopologyPlacement=thresholdTopologyPlacement):
