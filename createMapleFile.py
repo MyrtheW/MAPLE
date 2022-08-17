@@ -1,4 +1,5 @@
 import sys
+from sys import exit
 import os
 from os import path
 import argparse
@@ -10,10 +11,11 @@ import time
 #Example run command line: python3 createDiffsFile.py --path /pathToFolder/ --reference EPI_ISL_402124_lowercase.fasta --fasta 2021-03-31_unmasked.fa --output 2021-03-31_unmasked_differences.txt
 
 #TODO use consensus sequence when no reference is provided.
+#ByMyrthe: wouldn't it always be more space and time efficient to use the consensus? (when not considering time cost of consensus determination)
 #TODO create new MAPLE format output with reference first.
 
 parser = argparse.ArgumentParser(description='Translate fasta alignment into a MAPLE file.')
-parser.add_argument('--path',default="", help='path where to find and write files.')
+parser.add_argument('--path',default=os.getcwd() +"\\", help='path where to find and write files.')
 parser.add_argument('--reference',default="", help='name of the reference sequence file within the --path. By default creates a new reference from the input alignment consensus.')
 parser.add_argument("--fasta",default="2021-03-31_unmasked.fa", help="name of the input fasta alignment file.")
 parser.add_argument("--output",default="2021-03-31_unmasked_differences.txt", help="name of the output diff file.")
