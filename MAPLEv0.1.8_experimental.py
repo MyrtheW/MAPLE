@@ -858,7 +858,7 @@ def updateSubMatrix(pseudoMutCounts,model,oldMutMatrix): #,mutMatrixBLen,mutMatr
 
 #merge two partial likelihood vectors, one from above, probVect1, and one from below, probVect2
 #unlike appendProb(), this function is not used on a large part of the tree at each placement, but only in a small neighbourhood;
-def mergeVectorsUpDown(probVect1,bLenUp,probVect2,bLenDown,mutMatrix,useRateVariation=False,mutMatrices=None):
+def mergeVectorsUpDown(probVect1,bLenUp,probVect2,bLenDown,mutMatrix,useRateVariation=False,mutMatrices=None, node1isleaf=False, node2isleaf=False):
     indexEntry1, indexEntry2, pos = 0, 0, 0
     probVect=[]
     entry1=probVect1[indexEntry1]
@@ -1177,7 +1177,7 @@ def mergeVectorsUpDown(probVect1,bLenUp,probVect2,bLenDown,mutMatrix,useRateVari
 
 #merge two lower child partial likelihood vectors to create a new one 
 #(and also calculate the logLk of the merging if necessary, which is currently only useful for the root but could also be useful to calculate the overall total likelihood of the tree).
-def mergeVectors(probVect1,bLen1,probVect2,bLen2,mutMatrix,returnLK=False,useRateVariation=False,mutMatrices=None):
+def mergeVectors(probVect1,bLen1,probVect2,bLen2,mutMatrix,returnLK=False,useRateVariation=False,mutMatrices=None, node1isleaf=False, node2isleaf=False):
     indexEntry1, indexEntry2, pos = 0, 0, 0
     probVect=[]
     cumulPartLk=0.0
@@ -4649,11 +4649,34 @@ def getFlags(entry1, entry2, node1isleaf, node2isleaf):
     assert (type(flag2) == bool)
     return flag1, flag2
 
+def printDifMethods(i12, flag, totLen, errorRate):
+    partialVec1 = [flag * errorRate / 3] * 4  # without error rate [0.0, 0.0, 0.0, 0.0]
+    partialVec1[i12] = 1.0 - errorRate * flag
+    mutatedPartialVec1 = []
+    print("method1")  # extensive calculation method 1
+    for i in range4:
+        for j in range4:
+            tot = 0.0
+            for i in range4:
+                tot += mutMatrix[j][i] * partialVec1[i]
+            tot *= totLen
+            tot += partialVec1[-1][j]
+            mutatedPartialVec1[j] = tot
+    print(mutatedPartialVec1)
+    print("method2")   # approximate calculation method 2
+    for i in range4:
+        if i == i12:
+            partialVec1[i12] *= (1.0 + mutMatrix[i][i] * totLen)
+        else:
+            partialVec1[i12] *= (mutMatrix[i][i12] * totLen)
+    print(partialVec1)
+
 def getPartialVec(i12, flag, totLen, errorRate, method1=True):
     if flag:
         partialVec1 = [flag * errorRate / 3] * 4  # without error rate [0.0, 0.0, 0.0, 0.0]
         partialVec1[i12] = 1.0 - errorRate * flag  # without error rate: 0
         if totLen:
+            printDifMethods(i12, flag, totLen, errorRate)
             mutatedPartialVec1 = []
             if method1:  # extensive calculation method 1
                 for i in range4:
@@ -4691,7 +4714,7 @@ def getPartialVec(i12, flag, totLen, errorRate, method1=True):
 
 #merge two partial likelihood vectors, one from above, probVect1, and one from below, probVect2
 #unlike appendProb(), this function is not used on a large part of the tree at each placement, but only in a small neighbourhood;
-def mergeVectorsUpDownError(probVect1,bLenUp,probVect2,bLenDown,mutMatrix,useRateVariation=False,mutMatrices=None):
+def mergeVectorsUpDownError(probVect1,bLenUp,probVect2,bLenDown,mutMatrix,useRateVariation=False,mutMatrices=None, node1isleaf=False, node2isleaf=False):
     indexEntry1, indexEntry2, pos = 0, 0, 0
     probVect=[]
     entry1=probVect1[indexEntry1]
@@ -4715,7 +4738,7 @@ def mergeVectorsUpDownError(probVect1,bLenUp,probVect2,bLenDown,mutMatrix,useRat
                         probVect.append((entry2[0],pos,bLenDown,0.0, flag2)) #ErrorRate
                     else:
                         probVect.append((entry2[0],pos))
-            else: # entry2 case "O", entry 1 is "N"
+            else: # entry2 case "O", entry 1 is "N"; no flags
                 if useRateVariation:
                     mutMatrix=mutMatrices[pos]
                 pos+=1
@@ -4750,21 +4773,21 @@ def mergeVectorsUpDownError(probVect1,bLenUp,probVect2,bLenDown,mutMatrix,useRat
                 pos=min(entry1[1],entry2[1])
                 if len(entry1)==2:
                     if bLenUp:
-                        probVect.append((entry1[0],pos,bLenUp))
+                        probVect.append((entry1[0],pos,bLenUp, flag1))
                     else:
                         probVect.append((entry1[0],pos))
-                elif len(entry1)==3:
+                elif len(entry1)==4: #errorRate: ==4
                     if bLenUp:
-                        probVect.append((entry1[0],pos,entry1[2]+bLenUp))
+                        probVect.append((entry1[0],pos,entry1[2]+bLenUp, flag1))
                     else:
-                        probVect.append((entry1[0],pos,entry1[2]))
+                        probVect.append((entry1[0],pos,entry1[2], flag1))
                 else:
                     if bLenUp:
-                        probVect.append((entry1[0],pos,entry1[2],entry1[3]+bLenUp))
+                        probVect.append((entry1[0],pos,entry1[2],entry1[3]+bLenUp, flag1))
                     else:
-                        probVect.append((entry1[0],pos,entry1[2],entry1[3]))
+                        probVect.append((entry1[0],pos,entry1[2],entry1[3], flag1))
 
-            else: #entry1 is "O", entry 2 is "N"
+            else: #entry1 is "O", entry 2 is "N"; no error rate.
                 if useRateVariation:
                     mutMatrix=mutMatrices[pos]
                 pos+=1
@@ -4847,13 +4870,13 @@ def mergeVectorsUpDownError(probVect1,bLenUp,probVect2,bLenDown,mutMatrix,useRat
                 else:
                     i1=entry1[0]
                 newVec=[]
-                if len(entry1)==4:
+                if len(entry1)==5: #errorrate: ==5 instead of ==4:
                     rootVec=list(rootFreqs)
                     for i in range4:
-                        if i==i1:
-                            rootVec[i]*=(1.0+mutMatrix[i1][i1]*(entry1[2]))
+                        if i==i1: #Question; is this correct ?
+                            rootVec[i]*=(1.0+mutMatrix[i1][i1]*(entry1[2]))*(1-errorRate*flag1) #calculation method 2
                         else:
-                            rootVec[i]*=mutMatrix[i][i1]*(entry1[2])
+                            rootVec[i]*=mutMatrix[i][i1]*(entry1[2])+ errorRate*flag1
                     if bLenUp:
                         lenToRoot=entry1[3]+bLenUp
                     else:
@@ -4866,18 +4889,19 @@ def mergeVectorsUpDownError(probVect1,bLenUp,probVect2,bLenDown,mutMatrix,useRat
                         tot+=rootVec[j]
                         newVec.append(tot)
                 else:
-                    if totLen1:
-                        for i in range4:
-                            if i==i1:
-                                newVec.append(1.0+mutMatrix[i][i]*totLen1)
-                            else:
-                                newVec.append(mutMatrix[i1][i]*totLen1)
-                    else:
-                        for i in range4:
-                            if i==i1:
-                                newVec.append(1.0)
-                            else:
-                                newVec.append(0.0)
+                    newVec = getPartialVec(i1, flag1, totLen1, errorRate)
+                    # if totLen1:
+                    #     for i in range4:
+                    #         if i==i1:
+                    #             newVec.append(1.0+mutMatrix[i][i]*totLen1)
+                    #         else:
+                    #             newVec.append(mutMatrix[i1][i]*totLen1)
+                    # else:
+                    #     for i in range4:
+                    #         if i==i1:
+                    #             newVec.append(1.0)
+                    #         else:
+                    #             newVec.append(0.0)
                 if entry2[0]==6: #entry 2 is "O" and entry1 is a nucleotide
                     for j in range4:
                         tot=0.0
@@ -4901,16 +4925,20 @@ def mergeVectorsUpDownError(probVect1,bLenUp,probVect2,bLenDown,mutMatrix,useRat
                         i2=refIndeces[pos]
                     else:
                         i2=entry2[0]
-                    if totLen2:
-                        for i in range4:
-                            if i==i2:
-                                newVec[i]*=1.0+mutMatrix[i][i]*totLen2
-                            else:
-                                newVec[i]*=mutMatrix[i][i2]*totLen2
-                    else:
-                        for i in range4:
-                            if i!=i2:
-                                newVec[i]=0
+                    # if totLen2:
+                    #     for i in range4:
+                    #         if i==i2:
+                    #             newVec[i]*=1.0+mutMatrix[i][i]*totLen2
+                    #         else:
+                    #             newVec[i]*=mutMatrix[i][i2]*totLen2
+                    # else:
+                    #     for i in range4:
+                    #         if i!=i2:
+                    #             newVec[i]=0
+
+                    partialVec2 = getPartialVec(i2, flag2, totLen2, errorRate)
+                    for i in range4:
+                        newVec[i] *= partialVec2[i]
                     sumV=sum(newVec)
                     if not sumV:
                         print("situation")
@@ -4957,16 +4985,19 @@ def mergeVectorsUpDownError(probVect1,bLenUp,probVect2,bLenDown,mutMatrix,useRat
                         i2=refIndeces[pos]
                     else:
                         i2=entry2[0]
-                    if totLen2:
-                        for i in range4:
-                            if i==i2:
-                                newVec[i]*=(1.0+mutMatrix[i][i]*totLen2)
-                            else:
-                                newVec[i]*=mutMatrix[i][i2]*totLen2
-                    else:
-                        for i in range4:
-                            if i!=i2:
-                                newVec[i]=0.0
+                    # if totLen2:
+                    #     for i in range4:
+                    #         if i==i2:
+                    #             newVec[i]*=(1.0+mutMatrix[i][i]*totLen2)
+                    #         else:
+                    #             newVec[i]*=mutMatrix[i][i2]*totLen2
+                    # else:
+                    #     for i in range4:
+                    #         if i!=i2:
+                    #             newVec[i]=0.0
+                    partialVec2 = getPartialVec(i2, flag2, totLen2, errorRate)
+                    for i in range4:
+                        newVec[i] *= partialVec2[i]
                 sumV=sum(newVec)
                 if not sumV:
                     print("mergeVectorsUpDown() returning None 3")
@@ -5169,7 +5200,8 @@ def mergeVectorsError(probVect1, bLen1, probVect2, bLen2, mutMatrix, returnLK=Fa
                     else:
                         i2 = entry2[0]
 
-                    if totLen2:
+                    if totLen2: #Question: In contrast to mergeVectorsUpDown, here, in case totLen2==0,
+                        # then the newVec will not be multiplied with the partial likelihood vector of entry2
                         partialVec2 = getPartialVec(i2, flag2, totLen2, errorRate)
                         for i in range4:
                             newVec[i] *= partialVec2[i]
@@ -5438,7 +5470,6 @@ def reCalculateWithErrors(root,mutMatrix, errorRate, checkExistingAreCorrect=Fal
                     #newVect=getTot(node,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
                     if countPseudoCounts:
                         updatePesudoCounts(vectUp,node.probVect,pseudoMutCounts)
-                    # TODO: error version of mergeVectorsUpDown
                     newVect=mergeVectorsUpDown(vectUp,node.dist/2,node.probVect,node.dist/2,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
                     if checkExistingAreCorrect:
                         if areVectorsDifferentDebugging(newVect,node.probVectTotUp):
@@ -5565,7 +5596,7 @@ def getContribLengthErrorRate(entry1, entry2):
             else:
                 contribLength=entry1[2]
         if entry2[0]<5:
-            if len(entry2)<=4: #ErrorRate; instead of ==3, <=4
+            if len(entry2)==4: #ErrorRate; instead of ==3, ==4 (+ or ==3?)
                 if contribLength:
                     contribLength+=entry2[2]
                 else:
@@ -5576,7 +5607,7 @@ def getContribLengthErrorRate(entry1, entry2):
                     contribLength+=entry2[2]
                 else:
                     contribLength=entry2[2]
-    return contribLength
+        return contribLength
 
 
 def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,useRateVariation=False,mutMatrices=None):
@@ -5838,12 +5869,14 @@ def rootVectorErrorRate(probVect,bLen,mutMatrix,useRateVariation=False,mutMatric
     return newProbVect
 
 if True:#errorRate:
+    errorRate =0.0005
     estimateBranchLengthWithDerivative = errorRateEstimateBranchLengthWithDerivative
     getContribLength = getContribLengthErrorRate
-    mergeVector =
-    mergeVectorUpDown
+    mergeVector = mergeVectorsError
+    mergeVectorsUpDown = mergeVectorsUpDownError
     rootVector = rootVectorErrorRate
     reCalculateWithErrors(t1,mutMatrix, errorRate)
+    print("ErrorRate included")
 # set to ErrorRate functions
 
 
@@ -5997,8 +6030,8 @@ if not debugging and inputTree=="":
     while nextLeaves:
         node=nextLeaves.pop()
         if not node.children:
-            name=sampleNames[node.name]
-            sampleNames[node.name]=None
+            name=sampleNames[int(node.name)]
+            sampleNames[int(node.name)]=None
             node.name=name
             for m in range(len(node.minorSequences)):
                 name=sampleNames[node.minorSequences[m]]
