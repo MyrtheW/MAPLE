@@ -2999,10 +2999,10 @@ def setAllDirty(node):
 
 #function to calculate likelihood cost of appending node to parent node 
 #differently from appendProb, this allows the bottom node to be internal, not just a sample.
-def appendProbNode(probVectP,probVectC,bLen,mutMatrix,useRateVariation=False,mutMatrices=None):
+def appendProbNode(probVectP,probVectC,bLen,mutMatrix,useRateVariation=False,mutMatrices=None, node1isleaf=False, node2isleaf=False):):
     Lkcost, indexEntry1, indexEntry2, totalFactor, pos = 0.0, 0, 0, 1.0, 0
-    entry1=probVectP[indexEntry1]
-    entry2=probVectC[indexEntry2]
+    entry1=probVectP[indexEntry1] #parent
+    entry2=probVectC[indexEntry2] #child
     end=min(entry1[1],entry2[1])
     contribLength=bLen
     while True:
@@ -3015,37 +3015,38 @@ def appendProbNode(probVectP,probVectC,bLen,mutMatrix,useRateVariation=False,mut
             pos=min(entry1[1],entry2[1])
             pass
         else:
+            contribLength = getContribLength(entry1, entry2)
             #contribLength will be here the total length from the root or from the upper node, down to the down node.
-            if entry1[0]<5:
-                if len(entry1)==2:
-                    contribLength=bLen
-                elif len(entry1)==3:
-                    contribLength=entry1[2]
-                    if bLen:
-                        contribLength+=bLen
-                else:
-                    contribLength=entry1[3]
-                    if bLen:
-                        contribLength+=bLen
-            else:
-                if len(entry1)==3:
-                    contribLength=bLen
-                else:
-                    contribLength=entry1[2]
-                    if bLen:
-                        contribLength+=bLen
-            if entry2[0]<5:
-                if len(entry2)==3:
-                    if contribLength:
-                        contribLength+=entry2[2]
-                    else:
-                        contribLength=entry2[2]
-            else:
-                if len(entry2)==4:
-                    if contribLength:
-                        contribLength+=entry2[2]
-                    else:
-                        contribLength=entry2[2]
+            # if entry1[0]<5:
+            #     if len(entry1)==2:
+            #         contribLength=bLen
+            #     elif len(entry1)==3:
+            #         contribLength=entry1[2]
+            #         if bLen:
+            #             contribLength+=bLen
+            #     else:
+            #         contribLength=entry1[3]
+            #         if bLen:
+            #             contribLength+=bLen
+            # else:
+            #     if len(entry1)==3:
+            #         contribLength=bLen
+            #     else:
+            #         contribLength=entry1[2]
+            #         if bLen:
+            #             contribLength+=bLen
+            # if entry2[0]<5:
+            #     if len(entry2)==3:
+            #         if contribLength:
+            #             contribLength+=entry2[2]
+            #         else:
+            #             contribLength=entry2[2]
+            # else:
+            #     if len(entry2)==4:
+            #         if contribLength:
+            #             contribLength+=entry2[2]
+            #         else:
+            #             contribLength=entry2[2]
 
             if entry1[0]==4: # case entry1 is R
                 if entry2[0]==4:
@@ -3201,6 +3202,197 @@ def appendProbNode(probVectP,probVectC,bLen,mutMatrix,useRateVariation=False,mut
 
 
 
+#function to calculate likelihood cost of appending node to parent node
+#differently from appendProb, this allows the bottom node to be internal, not just a sample.
+def appendProbNodeErrorRate(probVectP,probVectC,bLen,mutMatrix,useRateVariation=False,mutMatrices=None, node2isleaf=False):
+    Lkcost, indexEntry1, indexEntry2, totalFactor, pos = 0.0, 0, 0, 1.0, 0
+    entry1=probVectP[indexEntry1]
+    entry2=probVectC[indexEntry2]
+    end=min(entry1[1],entry2[1])
+    while True:
+        if entry2[0]==5: # case entry1 is N
+            pos=min(entry1[1],entry2[1])
+            pass
+        elif entry1[0]==5: # case entry2 is N
+            #if parent node is type "N", in theory we might have to calculate the contribution of root nucleotides;
+            # however, if this node is "N" then every other node in the current tree is "N", so we can ignore this since this contribution cancels out in relative terms.
+            pos=min(entry1[1],entry2[1])
+            pass
+        else:
+            contribLength = getContribLength(entry1, entry2, bLen) #contribLength will be here the total length from the root or from the upper node, down to the down node.
+            flag1, flag2 = getFlags(entry1, entry2, node1isleaf =False, node2isleaf=node2isleaf) #node1isleaf must be false bcs it is the parent node.
+            if entry1[0]==4: # case entry1 is R
+                if entry2[0]==4: # case entry2 is R
+                    if len(entry1)==5: # == 5 instead of ==4 with errorRate
+                        end=min(entry1[1],entry2[1])
+                        contribLength+=entry1[2]
+                        if flag1 + flag2:
+                            # cumErrorRate  = cumulativeErrorRate[end]-cumulativeErrorRate[pos]  #cumulativeErrorRate should be log scaled already.
+                            cumErrorRate = log(1 - errorRate) * (end - pos)  # OR simplified: cumErrorRate =-errorRate*(end-pos)
+                            LKcost -= cumErrorRate*(flag1+flag2)
+                        Lkcost+=contribLength*(cumulativeRate[end]-cumulativeRate[pos])
+                        pos=end
+                    else:
+                        if contribLength:
+                            end=min(entry1[1],entry2[1])
+                            Lkcost+=contribLength*(cumulativeRate[end]-cumulativeRate[pos])
+                            if flag1 + flag2:
+                                # cumErrorRate  = cumulativeErrorRate[end]-cumulativeErrorRate[pos]  #cumulativeErrorRate should be log scaled already.
+                                cumErrorRate = log(1 - errorRate) * (end - pos)  # OR simplified: cumErrorRate =-errorRate*(end-pos)
+                                LKcost-= cumErrorRate * (flag1 + flag2) #TODO: should LKcost remain above 0?
+                            pos=end
+                        else:
+                            pos=min(entry1[1],entry2[1])
+
+                #entry1 is reference and entry2 is of type "O"
+                elif entry2[0]==6: #flag2 will be false
+                    if useRateVariation:
+                        mutMatrix=mutMatrices[pos]
+                    i1=refIndeces[pos]
+                    if len(entry1)==5: #==5 instead ==4 ErrorRate:
+                        tot=0.0
+                        for i in range4:
+                            if i1==i:
+                                tot2=rootFreqs[i]*(1.0+mutMatrix[i][i]*entry1[2])*flag1(1-errorRate) #error rates
+                            else:
+                                tot2=rootFreqs[i]*(mutMatrix[i][i1]*entry1[2] + flag1*errorRate/3)
+                            if contribLength:
+                                tot3=0.0
+                                for j in range4:
+                                    tot3+=mutMatrix[i][j]*entry2[-1][j]
+                                tot+=tot2*(entry2[-1][i] + contribLength*tot3)
+                            else:
+                                tot+=tot2*entry2[-1][i]
+                        tot/=rootFreqs[i1]
+                    else: #entry1 will have flag1==False. only for entries accross the root, can it inherit from a child node.
+                        if contribLength:
+                            tot=0.0
+                            for j in range4:
+                                tot+=mutMatrix[i1][j]*entry2[-1][j]
+                            tot*=contribLength
+                            tot+=entry2[-1][i1]
+                        else:
+                            tot=entry2[-1][i1]
+                    totalFactor*=tot
+                    pos+=1
+
+                else: #entry1 is R and entry2 is a different but single nucleotide
+                    if useRateVariation:
+                        mutMatrix=mutMatrices[pos]
+                    if len(entry1)==4:
+                        i1=refIndeces[pos]
+                        i2=entry2[0]
+                        if contribLength:
+                            totalFactor*=((rootFreqs[i1]*(mutMatrix[i1][i2]*contribLength+errorRate/3*flag2)* #prob that mutation (or error) occured on entry2's side of the root
+                                           (1.0+mutMatrix[i1][i1]*entry1[2])*(1-errorRate*flag1)+ #MULTIPLIED by prob that NO mutation (or error) occured on entry1's side of the root..
+                                           rootFreqs[i2]*(mutMatrix[i2][i1]*entry1[2]+errorRate/3*flag1)* #PLUS  the prob that mutation (or error)  occured on entry1's side of the root
+                                           (1.0+mutMatrix[i2][i2]*contribLength)*(1-errorRate*flag2)) #MULTIPLIED by the prob that NO mutation (or error) occured on entry2's side of the root
+                                          /rootFreqs[i1])
+                        else:
+                            totalFactor*=((rootFreqs[i2]*(mutMatrix[i2][i1]*entry1[2] + flag1*errorRate/3)  #the probability that the observed entry1 is erroneous, is  flag1*errorRate/3. I think this probability should be mutliplied with the root frequency of T2, but I am not sure.
+                                           + flag2*errorRate/3) #QUESTION: if contriblength=0, and thus c2 and l2 are 0, is it possible that the error rate in entry2 can still contribute?
+                                          /rootFreqs[i1])
+                    else:
+                        if contribLength: #error rate. Flag1 will be false here.
+                            totalFactor*=(mutMatrix[refIndeces[pos]][entry2[0]]*contribLength + flag2*errorRate/3)
+                        else:
+                            return float("-inf")
+                    pos+=1
+
+            # entry1 is of type "O"
+            elif entry1[0]==6:
+                if useRateVariation:
+                    mutMatrix=mutMatrices[pos]
+                if entry2[0]==6: # entry1 and entry2 is of type "O"; no Errorrate
+                    if contribLength:
+                        tot=0.0
+                        for j in range4:
+                            tot+=entry1[-1][j]*(entry2[-1][j] + contribLength*(mutMatrix[j][0]*entry2[-1][0]+mutMatrix[j][1]*entry2[-1][1]+mutMatrix[j][2]*entry2[-1][2]+mutMatrix[j][3]*entry2[-1][3]) )
+                        totalFactor*=tot
+                    else:
+                        tot=0.0
+                        for j in range4:
+                            tot+=entry1[-1][j]*entry2[-1][j]
+                        totalFactor*=tot
+                else: #entry1 is "O" and entry2 is a nucleotide
+                    if entry2[0]==4:
+                        i2=refIndeces[pos]
+                    else:
+                        i2=entry2[0]
+                    if contribLength:
+                        totalFactor*=(entry1[-1][i2]+contribLength*(entry1[-1][0]*mutMatrix[0][i2]+entry1[-1][1]*mutMatrix[1][i2]+entry1[-1][2]*mutMatrix[2][i2]+entry1[-1][3]*mutMatrix[3][i2]))
+                    else:
+                        totalFactor*=entry1[-1][i2]
+                pos+=1
+
+            else: #entry1 is a non-ref nuc
+                if useRateVariation:
+                    mutMatrix=mutMatrices[pos]
+                if entry2[0]==entry1[0]: #entry1 = entry2
+                    if len(entry1)==4:
+                        contribLength+=entry1[2]
+                    if contribLength:
+                        Lkcost+=mutMatrix[entry1[0]][entry1[0]]*contribLength + (flag1 +flag2)*log(1-errorRate) #OR: if error rate is very low, - errorRate(flag1 +flag2)
+                else: #entry1 is a nucleotide and entry2 is not the same as entry1
+                    i1=entry1[0]
+                    if entry2[0]<5: #entry2 is a nucleotide
+                        if entry2[0]==4:
+                            i2=refIndeces[pos]
+                        else:
+                            i2=entry2[0]
+                        if len(entry1)==4:
+                            if contribLength:
+                                totalFactor*=(( rootFreqs[i1]*mutMatrix[i1][i2]*contribLength*
+                                                (1.0+mutMatrix[i1][i1]*entry1[2])
+                                                + rootFreqs[i2]*mutMatrix[i2][i1]*entry1[2]*
+                                                (1.0+mutMatrix[i2][i2]*contribLength) )
+                                              /rootFreqs[i1])
+
+                            else:
+                                totalFactor*=((rootFreqs[i2]*mutMatrix[i2][i1]*entry1[2] )/rootFreqs[i1])
+                        else:
+                            if contribLength:
+                                totalFactor*=mutMatrix[i1][i2]*contribLength
+                            else:
+                                return float("-inf")
+                    else: #entry1 is a nucleotide and entry2 is of type "O"
+                        if len(entry1)==4:
+                            tot=0.0
+                            for i in range4:
+                                if i1==i:
+                                    tot2=rootFreqs[i]*(1.0+mutMatrix[i][i]*entry1[2])
+                                else:
+                                    tot2=rootFreqs[i]*mutMatrix[i][i1]*entry1[2]
+                                tot3=0.0
+                                for j in range4:
+                                    tot3+=mutMatrix[i][j]*entry2[-1][j]
+                                tot+=tot2*(entry2[-1][i] + contribLength*tot3)
+                            totalFactor*=(tot/rootFreqs[i1])
+                        else:
+                            tot=0.0
+                            for j in range4:
+                                tot+=mutMatrix[i1][j]*entry2[-1][j]
+                            tot*=contribLength
+                            tot+=entry2[-1][i1]
+                            totalFactor*=tot
+                pos+=1
+
+        if totalFactor<=minimumCarryOver:
+            if totalFactor<sys.float_info.min:
+                return float("-inf")
+            Lkcost+=log(totalFactor)
+            totalFactor=1.0
+        if pos==lRef:
+            break
+        if pos==entry1[1]:
+            indexEntry1+=1
+            entry1=probVectP[indexEntry1]
+        if pos==entry2[1]:
+            indexEntry2+=1
+            entry2=probVectC[indexEntry2]
+    return Lkcost+log(totalFactor)
+
+
 #calculate derivative starting from coefficients.
 def calculateDerivative(ais,t):
     derivative=0.0
@@ -3231,31 +3423,7 @@ def estimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,useRateVari
             pass
         else:
             #contribLength will be here the total length from the root or from the upper node, down to the down node.
-            if entry1[0]<5:
-                if len(entry1)==2:
-                    contribLength=False
-                elif len(entry1)==3:
-                    contribLength=entry1[2]
-                else:
-                    contribLength=entry1[3]
-            else:
-                if len(entry1)==3:
-                    contribLength=False
-                else:
-                    contribLength=entry1[2]
-            if entry2[0]<5:
-                if len(entry2)==3:
-                    if contribLength:
-                        contribLength+=entry2[2]
-                    else:
-                        contribLength=entry2[2]
-            else:
-                if len(entry2)==4:
-                    if contribLength:
-                        contribLength+=entry2[2]
-                    else:
-                        contribLength=entry2[2]
-
+            contribLength= getContribLength(entry1, entry2)
             if entry1[0]==4: # case entry1 is R
                 if entry2[0]==4:
                     end=min(entry1[1],entry2[1])
@@ -3471,8 +3639,8 @@ def traverseTreeToOptimizeBranchLengths(root,mutMatrix,testing=False,useRateVari
             bestLength=estimateBranchLengthWithDerivative(upVect,node.probVect,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
             if bestLength or node.dist:
                 if testing:
-                    currentCost=appendProbNode(upVect,node.probVect,node.dist,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
-                    newCost=appendProbNode(upVect,node.probVect,bestLength,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
+                    currentCost=appendProbNode(upVect,node.probVect,node.dist,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices, node1isLeaf= False, node2isLeaf= not bool(node.children))
+                    newCost=appendProbNode(upVect,node.probVect,bestLength,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices, node1isLeaf= False, node2isLeaf= bool(node.children))
                     if newCost<currentCost-thresholdLogLKconsecutivePlacement:
                         print("New branch length")
                         print(currentCost,node.dist,newCost,bestLength)
@@ -5560,7 +5728,8 @@ def reCalculateWithErrors(root,mutMatrix, errorRate, checkExistingAreCorrect=Fal
                     node=node.up
                     direction=1
 
-def getContribLength(entry1, entry2):
+def getContribLength(entry1, entry2, bLen=0):
+        contribLength = bLen
         if entry1[0] < 5:
             if len(entry1) == 2:
                 contribLength = False
@@ -5585,10 +5754,11 @@ def getContribLength(entry1, entry2):
                     contribLength += entry2[2]
                 else:
                     contribLength = entry2[2]
+        return contribLength
 
-
-def getContribLengthErrorRate(entry1, entry2):
+def getContribLengthErrorRate(entry1, entry2, bLen=0):
         #contribLength will be here the total length from the root or from the upper node, down to the down node.
+        contribLength = bLen
         if entry1[0]<5:
             if len(entry1)==2:
                 contribLength=False
