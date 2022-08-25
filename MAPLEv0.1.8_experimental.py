@@ -5,6 +5,16 @@ import argparse
 from time import time
 import os.path
 
+# Different sizes an entry can take with error rates:
+" L	1st 	2nd	    3rd 	4th	    5th 	Note"
+# 2	CATGRN	pos		0                               branch length (element) or leaf nodes
+# 3	CATGR	pos	    bLen
+# 3 CATGR	pos	    flag			                *
+# 3	O 	    pos	    vec
+# 4	O 	    pos	    bLen=0	vec		                avoid re-calculating the relative likelihoods
+# 4	CATGR	pos	    bLen	flag
+# 4	CATGR	pos	    bLen1	bLen2		            this type does not exist once flags are set
+# 5	CATGR	pos	    bLen1	bLen2	flag	        flag inherited across the root
 
 
 #©EMBL-European Bioinformatics Institute, 2021
@@ -30,16 +40,16 @@ import os.path
 
 #things one could MAYBE also try in the future:
 #TODO use slots (https://www.geeksforgeeks.org/slots-in-python/) to reduce memory cost?
-#TODO develop more nuanced exploration of topology space: reattempt to re-place only subtrees whose root have been affected in the last round of topology search (which is now already done), 
+#TODO develop more nuanced exploration of topology space: reattempt to re-place only subtrees whose root have been affected in the last round of topology search (which is now already done),
 # and their neighbours (which is not implemented yet)?
-#TODO for increased accuracy, one could calculate probVectTot genome lists in a way that would not depend by the choice of which two genome lists to merge first. 
+#TODO for increased accuracy, one could calculate probVectTot genome lists in a way that would not depend by the choice of which two genome lists to merge first.
 #For now implemented consistent calculation of tot likelihoods so to reduce inconsinstencies met.
 #TODO would it be convenient to remove the genome position element from entries of type ACGTO ? Sounds like a lot of changes, and might make things slower and less readable?
 #TODO if the model is reversible, no need to consider complicated case of root position, so the genome vector lists can be simpler and I can avoid additional calculations?
 #TODO does it make sense to have createFurtherMidNodes() or maybe rather save on the memory and create these genome lists anew each time? Maybe rather find optimal values for the threshold.
 #TODO try to replace appendProb() with appendProbNode()? it might be slightly slower, but it would be one fewer function in the code.
 #TODO do multiple rounds of SPR search with increasing thresholds? Now performing a quick short-range SPR tree traverse before the proper one.
-#TODO create an initial stage for the placement with very low thresholds; then, a second placement stage would use the default thresholds and work 
+#TODO create an initial stage for the placement with very low thresholds; then, a second placement stage would use the default thresholds and work
 # like the SPR search but starting the placement search from the node found by the first stage; finally, the last stage would be as usual.
 # I tried this but it comes at little computational advantage and at large accuracy cost.
 
@@ -1467,9 +1477,6 @@ def mergeVectors(probVect1,bLen1,probVect2,bLen2,mutMatrix,returnLK=False,useRat
 
 
 
-
-
-
 #calculate the probability that results from combining a lower likelihood genome list of the root with root frequencies.
 #Could maybe be combined with function rootVector() ?
 def findProbRoot(probVect):
@@ -1482,6 +1489,29 @@ def findProbRoot(probVect):
                 logLK+=rootFreqsLog[i]*(cumulativeBases[entry[1]][i]-cumulativeBases[pos][i])
         elif entry[0]<4:
             logLK+=rootFreqsLog[entry[0]]
+        elif entry[0]==6:
+            tot=0.0
+            for i in range4:
+                tot+=rootFreqs[i]*entry[-1][i]
+            logFactor*=tot
+        pos=entry[1]
+    logLK+=log(logFactor)
+    return logLK
+
+
+#calculate the probability that results from combining a lower likelihood genome list of the root with root frequencies.
+#Could maybe be combined with function rootVector() ?
+def findProbRootError(probVect): #TODO create an error version
+    logLK=0.0
+    logFactor=1.0
+    pos=0
+    for entry in probVect:
+        flag = getFlag(entry, node1isleaf=False)
+        if entry[0]==4:
+            for i in range4:
+                logLK+=rootFreqsLog[i]*(cumulativeBases[entry[1]][i]-cumulativeBases[pos][i]) - errorRate*flag*(entry[1] - pos)
+        elif entry[0]<4:
+            logLK+=rootFreqsLog[entry[0]] - errorRate*flag #K += log(𝝿(τ)*(1-e)) = log(𝝿(τ)) + log(1-e)) ~=log(𝝿(τ) -e)
         elif entry[0]==6:
             tot=0.0
             for i in range4:
@@ -2218,7 +2248,7 @@ totalMissedMinors=[0]
 #function traversing the tree to find the best node in the tree where to re-append the given subtree (rooted at node.children[child]) to improve the topology of the current tree.
 # bestLKdiff is the best likelihood cost found for the current placement (after optimizing the branch length).
 # removedBLen is such branch length that optimizes the current placement - it will be used to place the subtree attached at other nodes of the tree.
-#TODO adapt to use branch length optimization - done
+
 def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTopologyStopRules=strictTopologyStopRules,allowedFailsTopology=allowedFailsTopology,thresholdLogLKtopology=thresholdLogLKtopology,useRateVariation=False,mutMatrices=None):
     bestNode=node
     bestNodes=[]
@@ -2461,7 +2491,6 @@ def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTop
 
 #function to find the best node in the tree where to append the new sample; traverses the tree and tries to append the sample at each node and mid-branch nodes, 
 # but stops traversing when certain criteria are met.
-#TODO adapt to use branch length optimization - done
 def findBestParentForNewSample(root,diffs,sample,mutMatrix):
     bestNodes=[]
     bestNode=root
@@ -2699,7 +2728,6 @@ def areVectorsDifferentDebugging(probVect1,probVect2,threshold=0.00001):
 
 #if updating genome lists in updatePartials() creates an inconsistency, this function can increase the length of a 0-length branch to resolve the inconsistency.
 #In doing so, it updates, the input list of nodes to visit and update.
-#TODO update to use analytical branch length optimization - done
 def updateBLen(nodeList,node,mutMatrix,useRateVariation=False,mutMatrices=None):
     cNode=node
     node=node.up
@@ -2722,7 +2750,6 @@ def updateBLen(nodeList,node,mutMatrix,useRateVariation=False,mutMatrices=None):
 
 # update the partials iteratively starting from the nodes in nodeList
 #each entry in nodeList contains the node it refers to, and the direction where the update comes from (0 is left child, 1 is right child, 2 is parent)
-#TODO update to use analytical branch length optimization - done
 def updatePartials(nodeList,mutMatrix,useRateVariation=False,mutMatrices=None):
     while nodeList:
         updatedBLen=False # if there has been an inconsistency, function updateBLen() has been called, and so there is no point continuing with some updates.
@@ -2870,7 +2897,6 @@ def updatePartials(nodeList,mutMatrix,useRateVariation=False,mutMatrices=None):
 # now explore exactly which position near node is best for placement (direct child, sibling or sibling of existing child), and which are the best branch lengths,
 #then add the sample at that position of the tree, and update all the internal probability vectors.
 #UNNECESSARY? Could probably just be replaced by the more general placeSubtreeOnTree().
-#TODO update to use analytical branch length optimization - done
 def placeSampleOnTree(node,newPartials,sample,newChildLK, bestUpLength, bestDownLength, bestAppendingLength,mutMatrix,pseudoMutCounts):
     tryNewRoot=False
     if node.up==None:
@@ -2975,6 +3001,63 @@ def placeSampleOnTree(node,newPartials,sample,newChildLK, bestUpLength, bestDown
 
 
 
+def getContribLength(entry1, entry2, bLen=0):
+        contribLength = bLen
+        if entry1[0] < 5:
+            if len(entry1) == 2:
+                contribLength = False
+            elif len(entry1) == 3:
+                contribLength = entry1[2]
+            else:
+                contribLength = entry1[3]
+        else:
+            if len(entry1) == 3:
+                contribLength = False
+            else:
+                contribLength = entry1[2]
+        if entry2[0] < 5:
+            if len(entry2) == 3:
+                if contribLength:
+                    contribLength += entry2[2]
+                else:
+                    contribLength = entry2[2]
+        else:
+            if len(entry2) == 4:
+                if contribLength:
+                    contribLength += entry2[2]
+                else:
+                    contribLength = entry2[2]
+        return contribLength
+
+def getContribLengthErrorRate(entry1, entry2, bLen=0):
+        #contribLength will be here the total length from the root or from the upper node, down to the down node.
+        contribLength = bLen
+        if entry1[0]<5:
+            if len(entry1)==2:
+                contribLength=False
+            elif len(entry1)<=4: #ErrorRate; instead of ==3, <=4
+                contribLength=entry1[2]
+            else:
+                contribLength=entry1[3]
+        else:
+            if len(entry1)==3: #Question: How can the item be of type N or O and have a branch length element? ?
+                contribLength=False
+            else:
+                contribLength=entry1[2]
+        if entry2[0]<5:
+            if len(entry2)==4: #ErrorRate; instead of ==3, ==4 (+ or ==3?)
+                if contribLength:
+                    contribLength+=entry2[2]
+                else:
+                    contribLength=entry2[2]
+        else:
+            if len(entry2)==5: #ErrorRate; instead of ==4, ==5
+                if contribLength:
+                    contribLength+=entry2[2]
+                else:
+                    contribLength=entry2[2]
+        return contribLength
+
 
 
 
@@ -2999,7 +3082,7 @@ def setAllDirty(node):
 
 #function to calculate likelihood cost of appending node to parent node 
 #differently from appendProb, this allows the bottom node to be internal, not just a sample.
-def appendProbNode(probVectP,probVectC,bLen,mutMatrix,useRateVariation=False,mutMatrices=None, node1isleaf=False, node2isleaf=False):):
+def appendProbNode(probVectP,probVectC,bLen,mutMatrix,useRateVariation=False,mutMatrices=None, node1isleaf=False, node2isleaf=False):
     Lkcost, indexEntry1, indexEntry2, totalFactor, pos = 0.0, 0, 0, 1.0, 0
     entry1=probVectP[indexEntry1] #parent
     entry2=probVectC[indexEntry2] #child
@@ -3220,7 +3303,7 @@ def appendProbNodeErrorRate(probVectP,probVectC,bLen,mutMatrix,useRateVariation=
             pass
         else:
             contribLength = getContribLength(entry1, entry2, bLen) #contribLength will be here the total length from the root or from the upper node, down to the down node.
-            flag1, flag2 = getFlags(entry1, entry2, node1isleaf =False, node2isleaf=node2isleaf) #node1isleaf must be false bcs it is the parent node.
+            flag1, flag2 = getFlags(entry1, entry2, node1isleaf=False, node2isleaf=node2isleaf) #node1isleaf must be false bcs it is the parent node.
             if entry1[0]==4: # case entry1 is R
                 if entry2[0]==4: # case entry2 is R
                     if len(entry1)==5: # == 5 instead of ==4 with errorRate
@@ -3239,7 +3322,7 @@ def appendProbNodeErrorRate(probVectP,probVectC,bLen,mutMatrix,useRateVariation=
                             if flag1 + flag2:
                                 # cumErrorRate  = cumulativeErrorRate[end]-cumulativeErrorRate[pos]  #cumulativeErrorRate should be log scaled already.
                                 cumErrorRate = log(1 - errorRate) * (end - pos)  # OR simplified: cumErrorRate =-errorRate*(end-pos)
-                                LKcost-= cumErrorRate * (flag1 + flag2) #TODO: should LKcost remain above 0?
+                                LKcost-= cumErrorRate * (flag1 + flag2)
                             pos=end
                         else:
                             pos=min(entry1[1],entry2[1])
@@ -3293,8 +3376,8 @@ def appendProbNodeErrorRate(probVectP,probVectC,bLen,mutMatrix,useRateVariation=
                                            + flag2*errorRate/3) #QUESTION: if contriblength=0, and thus c2 and l2 are 0, is it possible that the error rate in entry2 can still contribute?
                                           /rootFreqs[i1])
                     else:
-                        if contribLength: #error rate. Flag1 will be false here.
-                            totalFactor*=(mutMatrix[refIndeces[pos]][entry2[0]]*contribLength + flag2*errorRate/3)
+                        if contribLength:
+                            totalFactor*=(mutMatrix[refIndeces[pos]][entry2[0]]*contribLength + flag2*errorRate/3) #error rate. Flag1 will be false here.
                         else:
                             return float("-inf")
                     pos+=1
@@ -3320,7 +3403,19 @@ def appendProbNodeErrorRate(probVectP,probVectC,bLen,mutMatrix,useRateVariation=
                     else:
                         i2=entry2[0]
                     if contribLength:
-                        totalFactor*=(entry1[-1][i2]+contribLength*(entry1[-1][0]*mutMatrix[0][i2]+entry1[-1][1]*mutMatrix[1][i2]+entry1[-1][2]*mutMatrix[2][i2]+entry1[-1][3]*mutMatrix[3][i2]))
+                        tot1 = 0
+                        for i in range4:
+                            if i2 == i:
+                                tot1 += (1.0 + mutMatrix[i][i] * contribLength) * (1 - errorRate * flag2)
+                            else:
+                                tot1 += rootFreqs[i] * (mutMatrix[i][i2] * contribLength+ flag2 * errorRate / 3)
+                        totalFactor*=tot1
+                        # totalFactor*=(entry1[-1][i2]+ #cronicler delta term , *(1- flag2*errorRate)
+                        #               contribLength*
+                        #               (entry1[-1][0]*mutMatrix[0][i2]+
+                        #                entry1[-1][1]*mutMatrix[1][i2]+
+                        #                entry1[-1][2]*mutMatrix[2][i2]+
+                        #                entry1[-1][3]*mutMatrix[3][i2]))
                     else:
                         totalFactor*=entry1[-1][i2]
                 pos+=1
@@ -3342,17 +3437,18 @@ def appendProbNodeErrorRate(probVectP,probVectC,bLen,mutMatrix,useRateVariation=
                             i2=entry2[0]
                         if len(entry1)==4:
                             if contribLength:
-                                totalFactor*=(( rootFreqs[i1]*mutMatrix[i1][i2]*contribLength*
-                                                (1.0+mutMatrix[i1][i1]*entry1[2])
-                                                + rootFreqs[i2]*mutMatrix[i2][i1]*entry1[2]*
-                                                (1.0+mutMatrix[i2][i2]*contribLength) )
-                                              /rootFreqs[i1])
-
+                                totalFactor*=((rootFreqs[i1]*(mutMatrix[i1][i2]*contribLength+errorRate/3*flag2)* #prob that mutation (or error) occured on entry2's side of the root
+                                           (1.0+mutMatrix[i1][i1]*entry1[2])*(1-errorRate*flag1)+ #MULTIPLIED by prob that NO mutation (or error) occured on entry1's side of the root..
+                                           rootFreqs[i2]*(mutMatrix[i2][i1]*entry1[2]+errorRate/3*flag1)* #PLUS  the prob that mutation (or error)  occured on entry1's side of the root
+                                           (1.0+mutMatrix[i2][i2]*contribLength)*(1-errorRate*flag2)) #MULTIPLIED by the prob that NO mutation (or error) occured on entry2's side of the root
+                                          /rootFreqs[i1])
                             else:
-                                totalFactor*=((rootFreqs[i2]*mutMatrix[i2][i1]*entry1[2] )/rootFreqs[i1])
+                                totalFactor*=((rootFreqs[i2]*(mutMatrix[i2][i1]*entry1[2] + flag1*errorRate/3)  #the probability that the observed entry1 is erroneous, is  flag1*errorRate/3. I think this probability should be mutliplied with the root frequency of T2, but I am not sure.
+                                           + flag2*errorRate/3) #QUESTION: if contriblength=0, and thus c2 and l2 are 0, is it possible that the error rate in entry2 can still contribute?
+                                          /rootFreqs[i1])
                         else:
                             if contribLength:
-                                totalFactor*=mutMatrix[i1][i2]*contribLength
+                                totalFactor*=(mutMatrix[i1][i2]*contribLength + flag2*errorRate/3) #error rate. Flag1 will be false
                             else:
                                 return float("-inf")
                     else: #entry1 is a nucleotide and entry2 is of type "O"
@@ -3360,15 +3456,15 @@ def appendProbNodeErrorRate(probVectP,probVectC,bLen,mutMatrix,useRateVariation=
                             tot=0.0
                             for i in range4:
                                 if i1==i:
-                                    tot2=rootFreqs[i]*(1.0+mutMatrix[i][i]*entry1[2])
+                                    tot2=rootFreqs[i]*(1.0+mutMatrix[i][i]*entry1[2])*(1-errorRate*flag1) #error rates, only in this part.
                                 else:
-                                    tot2=rootFreqs[i]*mutMatrix[i][i1]*entry1[2]
+                                    tot2=rootFreqs[i]*(mutMatrix[i][i1]*entry1[2] + flag1*errorRate/3)
                                 tot3=0.0
                                 for j in range4:
                                     tot3+=mutMatrix[i][j]*entry2[-1][j]
                                 tot+=tot2*(entry2[-1][i] + contribLength*tot3)
                             totalFactor*=(tot/rootFreqs[i1])
-                        else:
+                        else: # no error rate.
                             tot=0.0
                             for j in range4:
                                 tot+=mutMatrix[i1][j]*entry2[-1][j]
@@ -3376,7 +3472,7 @@ def appendProbNodeErrorRate(probVectP,probVectC,bLen,mutMatrix,useRateVariation=
                             tot+=entry2[-1][i1]
                             totalFactor*=tot
                 pos+=1
-
+        #TODO: add the different approximations, and check the differences.
         if totalFactor<=minimumCarryOver:
             if totalFactor<sys.float_info.min:
                 return float("-inf")
@@ -3675,7 +3771,6 @@ def traverseTreeToOptimizeBranchLengths(root,mutMatrix,testing=False,useRateVari
 #we know that subtree "appendedNode", with partials "newPartials", is best placed as child of "node" resulting in logLK contribution of newChildLK
 # now explore exactly which position near node is best for placement (direct child, sibling or sibling of existing child), and which are the best branch lengths,
 #then add the subtree at that position of the tree, and update all the internal probability vectors.
-#TODO update to use analytical branch length optimization - done
 def placeSubtreeOnTree(node,newPartials,appendedNode,newChildLK,bestBranchLengths,mutMatrix,useRateVariation=False,mutMatrices=None):
     bestAppendingLength=bestBranchLengths[2]
     bestUpLength=bestBranchLengths[0]
@@ -3788,7 +3883,7 @@ def placeSubtreeOnTree(node,newPartials,appendedNode,newChildLK,bestBranchLength
 #remove node from the current position in the tree and re-attach it at a new given place new bestNode.
 # First remove node from the tree, then update the genome lists;
 # then find the exact best reattachment of node and update the genome lists again using function placeSubtreeOnTree().
-#TODO update to use analytical branch length optimization - done
+
 def cutAndPasteNode(node,bestNode,bestBranchLengths,bestLK,mutMatrix,useRateVariation=False,mutMatrices=None):
     #remove node from the tree
     #verbose=True
@@ -3872,7 +3967,7 @@ def cutAndPasteNode(node,bestNode,bestBranchLengths,bestLK,mutMatrix,useRateVari
 # as done by the findBestParentTopology() function.
 # To avoid traversing the whole tree for each SPR move, we use stopping conditions similar to those used in the initial sample placement process.
 # After we find the best SPR move for the given node, we execute it using the cutAndPasteNode() function.
-#TODO update to use analytical branch length optimization - done
+
 def traverseTreeForTopologyUpdate(node,mutMatrix,strictTopologyStopRules=strictTopologyStopRules,allowedFailsTopology=allowedFailsTopology,thresholdLogLKtopology=thresholdLogLKtopology,thresholdTopologyPlacement=thresholdTopologyPlacement,useRateVariation=False,mutMatrices=None):
     #track if the root has changed, so that the new root node can be returned.
     newRoot=None
@@ -4793,7 +4888,24 @@ def addErrorTerminalNode(node, errorRateOneThird):
             # this can be done faster with numpy
         #else: #entry[0]==5 of type N, we don't take this into account now.
 
+
+def getFlag(entry1, node1isleaf):
+    if len(entry1) >= 4 and entry1[0] < 5:
+        flag1 = entry1[-1]
+        if type(flag1) != bool: #then it is a second branch length element.
+            flag1 = False
+    else:
+        if node1isleaf == []:
+            flag1 = True
+        elif entry1[0] >= 5:  # cases of O or N
+            flag1 = False
+        else:  # other cases with 0 branch length:
+            flag1 = False
+    assert (type(flag1) == bool)
+    return flag1
+
 def getFlags(entry1, entry2, node1isleaf, node2isleaf):
+    #replace this function with getFlag function above
     if len(entry1) >= 4 and entry1[0] < 5:
         flag1 = entry1[-1]
         if type(flag1) != bool: #then it is a second branch length element.
@@ -4847,7 +4959,7 @@ def getPartialVec(i12, flag, totLen, errorRate, method1=True):
         partialVec1 = [flag * errorRate / 3] * 4  # without error rate [0.0, 0.0, 0.0, 0.0]
         partialVec1[i12] = 1.0 - errorRate * flag  # without error rate: 0
         if totLen:
-            printDifMethods(i12, flag, totLen, errorRate)
+            #printDifMethods(i12, flag, totLen, errorRate)
             mutatedPartialVec1 = [0]*4
             if method1:  # extensive calculation method 1
                 for j in range4:
@@ -5222,7 +5334,7 @@ def mergeVectorsError(probVect1, bLen1, probVect2, bLen2, mutMatrix, returnLK=Fa
                 if len(entry2) == 2: # entry 2 is a child node or has bLength element of 0 with its predecessor.
                     if bLen2:
                         probVect.append((entry2[0], pos, bLen2, node2isleaf)) #flag = flag2 = node2isleaf in this case. If node 2 was not a leaf, it means it is a node with a 0 branch length element.
-                    else: #0-branch length: no need to set the flag
+                    else: #0-branch length: no need to set the flag #TODO: actually, we need to set an error rate in such cases if the child.dist=False (e.g. for less informative child nodes)
                         probVect.append((entry2[0], pos))
                 else:
                     assert (type(entry2[-1]) == bool)
@@ -5584,7 +5696,6 @@ def reCalculateWithErrors(root,mutMatrix, errorRate, checkExistingAreCorrect=Fal
                 if newLower == None:
                     if not node.children[0].dist:
                         nodeList = []
-                        # TODO: write a version for error Rates of branch length derivitive
                         updateBLen(nodeList, node, mutMatrix, useRateVariation=useRateVariation,mutMatrices=mutMatrices)
                         updatePartials(nodeList, mutMatrix, useRateVariation=useRateVariation, mutMatrices=mutMatrices)
                     elif not node.children[1].dist:
@@ -5728,63 +5839,6 @@ def reCalculateWithErrors(root,mutMatrix, errorRate, checkExistingAreCorrect=Fal
                     node=node.up
                     direction=1
 
-def getContribLength(entry1, entry2, bLen=0):
-        contribLength = bLen
-        if entry1[0] < 5:
-            if len(entry1) == 2:
-                contribLength = False
-            elif len(entry1) == 3:
-                contribLength = entry1[2]
-            else:
-                contribLength = entry1[3]
-        else:
-            if len(entry1) == 3:
-                contribLength = False
-            else:
-                contribLength = entry1[2]
-        if entry2[0] < 5:
-            if len(entry2) == 3:
-                if contribLength:
-                    contribLength += entry2[2]
-                else:
-                    contribLength = entry2[2]
-        else:
-            if len(entry2) == 4:
-                if contribLength:
-                    contribLength += entry2[2]
-                else:
-                    contribLength = entry2[2]
-        return contribLength
-
-def getContribLengthErrorRate(entry1, entry2, bLen=0):
-        #contribLength will be here the total length from the root or from the upper node, down to the down node.
-        contribLength = bLen
-        if entry1[0]<5:
-            if len(entry1)==2:
-                contribLength=False
-            elif len(entry1)<=4: #ErrorRate; instead of ==3, <=4
-                contribLength=entry1[2]
-            else:
-                contribLength=entry1[3]
-        else:
-            if len(entry1)==3: #Question: How can the item be of type N or O and have a branch length element? ?
-                contribLength=False
-            else:
-                contribLength=entry1[2]
-        if entry2[0]<5:
-            if len(entry2)==4: #ErrorRate; instead of ==3, ==4 (+ or ==3?)
-                if contribLength:
-                    contribLength+=entry2[2]
-                else:
-                    contribLength=entry2[2]
-        else:
-            if len(entry2)==5: #ErrorRate; instead of ==4, ==5
-                if contribLength:
-                    contribLength+=entry2[2]
-                else:
-                    contribLength=entry2[2]
-        return contribLength
-
 
 def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,useRateVariation=False,mutMatrices=None):
     c1=0.0
@@ -5794,15 +5848,15 @@ def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,us
     entry2=probVectC[indexEntry2]
     end=min(entry1[1],entry2[1])
     while True:
-        #flag1, flag2 = getFlags(entry1, entry2, node1isleaf, node2isleaf)
+        flag1, flag2 = getFlags(entry1, entry2, node1isleaf, node2isleaf)
         if entry2[0]==5: # case entry1 is N
-            pos=min(entry1[1],entry2[1])
+            pos=min(entry1[1],entry2[1]) #no error rate ?
             pass
         elif entry1[0]==5: # case entry2 is N
             #if parent node is type "N", in theory we might have to calculate the contribution of root nucleotides;
             # however, if this node is "N" then every other node in the current tree is "N", so we can ignore this since this contribution cancels out in relative terms.
             pos=min(entry1[1],entry2[1])
-            pass
+            pass #no error rate ?
         else:
             contribLength = getContribLengthErrorRate(entry1, entry2)
             if entry1[0]==4: # case entry1 is R
@@ -5820,14 +5874,14 @@ def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,us
                     i1=refIndeces[pos]
                     if len(entry1)==5: # ErrorRate: ==4 to ==5
                         coeff0=rootFreqs[i1]*entry2[-1][i1]
-                        coeff1=0.0 #TODO: take into account error rates if flag1 or flag2
+                        coeff1=0.0 #TODO: take into account error rates if flag1 or flag2 ??
                         for i in range4:
                             coeff0+=rootFreqs[i]*mutMatrix[i][i1]*entry1[2]*entry2[-1][i]
                             coeff1+=mutMatrix[i1][i]*entry2[-1][i]
                         coeff1*=rootFreqs[i1]
                         if contribLength:
                             coeff0+=coeff1*contribLength
-                    else:
+                    else: #ErrorRate: nothing changes.
                         coeff0=entry2[-1][i1]
                         coeff1=0.0
                         for j in range4:
@@ -5843,8 +5897,8 @@ def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,us
 
                 else: #entry1 is R and entry2 is a different but single nucleotide
                     if len(entry1)==5: # ErrorRate: ==4 to ==5
-                        if useRateVariation:
-                            mutMatrix=mutMatrices[pos]
+                        if useRateVariation: #again f1 can only be true if the error rate is inherited across the root.
+                            mutMatrix=mutMatrices[pos] #TODO: errorRate
                         i1=refIndeces[pos]
                         i2=entry2[0]
                         if contribLength:
@@ -5854,9 +5908,9 @@ def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,us
                             coeff0=rootFreqs[i2]*mutMatrix[i2][i1]*entry1[2]
                             coeff1=rootFreqs[i1]*mutMatrix[i1][i2]
                         coeff0=coeff0/coeff1
-                    else:
+                    else: #ErrorRate : only f2 can be true.
                         if contribLength:
-                            coeff0=contribLength
+                            coeff0=contribLength + errorRate*flag2/(3*mutMatrix[i1][i2])
                         else:
                             coeff0=0.0
                     ais.append(coeff0)
@@ -5866,7 +5920,7 @@ def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,us
             elif entry1[0]==6:
                 if useRateVariation:
                     mutMatrix=mutMatrices[pos]
-                if entry2[0]==6: # entry1 and entry2 are both of type "O"
+                if entry2[0]==6: # entry1 and entry2 are both of type "O": no Error Rate
                     coeff0=entry1[-1][0]*entry2[-1][0]+entry1[-1][1]*entry2[-1][1]\
                            +entry1[-1][2]*entry2[-1][2]+entry1[-1][3]*entry2[-1][3] #coef0: prob that it stays the same.
                     coeff1=0.0
@@ -5875,31 +5929,40 @@ def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,us
                             coeff1+=entry1[-1][i]*entry2[-1][j]*mutMatrix[i][j] #coef1: prob that it subsitutes
                     if contribLength:
                         coeff0+=coeff1*contribLength
+                    if coeff1 < 0.0:
+                        c1 += coeff1 / coeff0
+                    elif coeff1:
+                        coeff0 = coeff0 / coeff1
+                        ais.append(coeff0)
                 else: #entry1 is "O" and entry2 is a nucleotide
                     if entry2[0]==4:
                         i2=refIndeces[pos]
                     else:
                         i2=entry2[0]
-                    coeff0=entry1[-1][i2]
-                    coeff1=0.0
+                    coeff1 = 0.0
                     for i in range4:
-                        coeff1+=entry1[-1][i]*mutMatrix[i][i2]
-                    if contribLength:
-                        coeff0+=coeff1*contribLength
-                if coeff1<0.0:
-                    c1+=coeff1/coeff0
-                elif coeff1:
-                    coeff0=coeff0/coeff1
-                    ais.append(coeff0)
+                        coeff1 += entry1[-1][i] * mutMatrix[i][i2]
+                    if flag2: #include error rate if flag2
+                        ais.append(coeff1*4/3*errorRate + contribLength)
+                    else:
+                        coeff0 = entry1[-1][i2]
+                        if contribLength:
+                            coeff0+=coeff1*contribLength
+                        if coeff1 < 0.0:
+                            c1 += coeff1 / coeff0
+                        elif coeff1:
+                            coeff0 = coeff0 / coeff1
+                            ais.append(coeff0)
+
                 pos+=1
 
             else: #entry1 is a non-ref nuc
                 if useRateVariation:
                     mutMatrix=mutMatrices[pos]
                 if entry2[0]==entry1[0]:
-                    c1+=mutMatrix[entry1[0]][entry1[0]]
+                    c1+=mutMatrix[entry1[0]][entry1[0]] #ErrorRate: nothing changes
                 else: #entry1 is a nucleotide and entry2 is not the same as entry1
-                    i1=entry1[0]
+                    i1=entry1[0] #TODO include errorRate
                     if entry2[0]<5: #entry2 is a nucleotide
                         if entry2[0]==4:
                             i2=refIndeces[pos]
@@ -5923,14 +5986,26 @@ def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,us
 
                     else: #entry1 is a nucleotide and entry2 is of type "O"
                         if len(entry1)==5: # ErrorRate: ==4 to ==5
-                            coeff0=rootFreqs[i1]*entry2[-1][i1]
-                            coeff1=0.0
-                            for i in range4:
-                                coeff0+=rootFreqs[i]*mutMatrix[i][i1]*entry1[2]*entry2[-1][i]
-                                coeff1+=mutMatrix[i1][i]*entry2[-1][i]
-                            coeff1*=rootFreqs[i1]
-                            if contribLength:
-                                coeff0+=coeff1*contribLength
+                            if flag1: # ErrorRate
+                                d= [0]*4
+                                denominator, numerator = 0, 0
+                                for i in range4:
+                                    d[i] = rootFreqs[i]*((i==entry2[-1])*(1-errorRate) + mutMatrix[i][i1]*entry1[2] + errorRate/3)
+                                    numerator += d[i]*entry2[i]
+                                    summation = 0
+                                    for j in range4:
+                                        summation+= mutMatrix[i][j]*entry2[j]
+                                    denominator += d[i]*summation
+                                ais.append(numerator/denominator)
+                            else:
+                                coeff0=rootFreqs[i1]*entry2[-1][i1]
+                                coeff1=0.0
+                                for i in range4:
+                                    coeff0+=rootFreqs[i]*mutMatrix[i][i1]*entry1[2]*entry2[-1][i]
+                                    coeff1+=mutMatrix[i1][i]*entry2[-1][i]
+                                coeff1*=rootFreqs[i1]
+                                if contribLength:
+                                    coeff0+=coeff1*contribLength
                         else:
                             coeff0=entry2[-1][i1]
                             coeff1=0.0
@@ -6044,18 +6119,66 @@ def rootVectorErrorRate(probVect,bLen,mutMatrix,useRateVariation=False,mutMatric
                     newProbVect.append((entry[0],entry[1]))
     return newProbVect
 
-if True:#errorRate:
+
+def traverseTopology(node, function, leafsOnly=False):
+    #and perform a function at leaf nodes.
+    print('start traversal')
+    nodesToVisit=[node]
+    while nodesToVisit:
+        newNode=nodesToVisit.pop()
+        for c in newNode.children:
+            nodesToVisit.append(c)
+            if not node.children or not leafsOnly:
+                function(node)
+
+def countEntries(node):
+    numNodes[0]+=1
+    for entry in node.probVect: #or should i also check the node.probvectup etc?
+        if entry[0] < 4:
+            numNodes[1] += 1
+        elif entry[0] == 4:
+            numNodes[2] += 1
+        elif entry[0] == 5:
+            numNodes[3] += 1
+        else:
+            numNodes[4] += 1
+
+def countEntriesAll(root):
+    global numNodes
+    numNodes = [0]*5
+    traverseTopology(root, countEntries)
+    print("Number of nodes: "+str(numNodes[0]))
+    print("Os per node: "+str(float(numNodes[4])/numNodes[0]))
+    print("Nucs per node: "+str(float(numNodes[1])/numNodes[0]))
+    print("Ns per node: "+str(float(numNodes[3])/numNodes[0]))
+
+
+
+#QUESTION: in example, MAPLE_input_example.txt, the first sample seems to be not included in the tree.
+if True:# if errorRate:
+    import copy
+    t0 = copy.deepcopy(t1)
+    reCalculateAllGenomeLists(t1,mutMatrix)
+    t0_1 = copy.deepcopy(t1)
+    countEntriesAll(t1)
     errorRate =0.0005
     estimateBranchLengthWithDerivative = errorRateEstimateBranchLengthWithDerivative
     getContribLength = getContribLengthErrorRate
     mergeVector = mergeVectorsError
     mergeVectorsUpDown = mergeVectorsUpDownError
     rootVector = rootVectorErrorRate
-    t1.children[1].children[0].dist = 0.1
-    t1.children[0].dist = 0.1
+    appendProbNode = appendProbNodeErrorRate
+    # placeSubtreeOnTree does not need to be changed
+    # cutAndPaste does not need to be changed
+    findProbRoot = findProbRootError
+    # t1.children[1].children[0].dist = 0.1
+    # t1.children[0].dist = 0.1
     reCalculateAllGenomeLists =reCalculateWithErrors
+    print("start recalculating with ErrorRate")
     reCalculateWithErrors(t1,mutMatrix, errorRate)
     print("ErrorRate included")
+    countEntriesAll(t1) #checking if node compositions remain the same. .. Difficult to conlcude anything based on this, since node.dist is often False.
+    print('x')
 # set to ErrorRate functions
 
 
