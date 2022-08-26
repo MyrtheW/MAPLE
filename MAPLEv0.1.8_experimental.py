@@ -2444,29 +2444,31 @@ def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTop
                 downVect=t1.probVect
                 distance=t1.dist
                 midTot=t1.probVectTotUp
+                node2isleaf = (t1.children==[])
             else:
                 upVect=nodePair[2]
                 downVect=nodePair[3]
                 distance=nodePair[4]
                 midTot=nodePair[5]
+                node2isleaf = (nodePair[0].children==[])
             bestAppendingLength=estimateBranchLengthWithDerivative(midTot,removedPartials,mutMatrix)
             #now optimize appending location
-            midLowerVector=mergeVectors(downVect,distance/2,removedPartials,bestAppendingLength,mutMatrix)
-            bestTopLength=estimateBranchLengthWithDerivative(upVect,midLowerVector,mutMatrix)
-            midTopVector=mergeVectorsUpDown(upVect,bestTopLength,removedPartials,bestAppendingLength,mutMatrix)
-            bestBottomLength=estimateBranchLengthWithDerivative(midTopVector,downVect,mutMatrix)
-            newMidVector=mergeVectorsUpDown(upVect,bestTopLength,downVect,bestBottomLength,mutMatrix)
+            midLowerVector=mergeVectors(downVect,distance/2,removedPartials,bestAppendingLength,mutMatrix, node2isleaf=node2isleaf)
+            bestTopLength=estimateBranchLengthWithDerivative(upVect,midLowerVector,mutMatrix, node2isleaf=node2isleaf)
+            midTopVector=mergeVectorsUpDown(upVect,bestTopLength,removedPartials,bestAppendingLength,mutMatrix, node2isleaf=node2isleaf)
+            bestBottomLength=estimateBranchLengthWithDerivative(midTopVector,downVect,mutMatrix, node2isleaf=node2isleaf)
+            newMidVector=mergeVectorsUpDown(upVect,bestTopLength,downVect,bestBottomLength,mutMatrix, node2isleaf=node2isleaf)
             if secondBranchLengthOptimizationRound: #if wanted, do a second round of branch length optimization
-                bestAppendingLength=estimateBranchLengthWithDerivative(newMidVector,removedPartials,mutMatrix)
-                midLowerVector=mergeVectors(downVect,bestBottomLength,removedPartials,bestAppendingLength,mutMatrix)#, node1isleaf= node1isleaf,node2isleaf=node2isleaf)
-                bestTopLength=estimateBranchLengthWithDerivative(upVect,midLowerVector,mutMatrix)
-                midTopVector=mergeVectorsUpDown(upVect,bestTopLength,removedPartials,bestAppendingLength,mutMatrix)#, node1isleaf= node1isleaf,node2isleaf=node2isleaf )
-                bestBottomLength=estimateBranchLengthWithDerivative(midTopVector,downVect,mutMatrix)
-                newMidVector=mergeVectorsUpDown(upVect,bestTopLength,downVect,bestBottomLength,mutMatrix)
-            appendingCost=appendProbNode(newMidVector,removedPartials,bestAppendingLength,mutMatrix)
+                bestAppendingLength=estimateBranchLengthWithDerivative(newMidVector,removedPartials,mutMatrix, node2isleaf=node2isleaf)
+                midLowerVector=mergeVectors(downVect,bestBottomLength,removedPartials,bestAppendingLength,mutMatrix, node2isleaf=node2isleaf)#, node1isleaf= node1isleaf,node2isleaf=node2isleaf)
+                bestTopLength=estimateBranchLengthWithDerivative(upVect,midLowerVector,mutMatrix, node2isleaf=node2isleaf)
+                midTopVector=mergeVectorsUpDown(upVect,bestTopLength,removedPartials,bestAppendingLength,mutMatrix, node2isleaf=node2isleaf)#, node1isleaf= node1isleaf,node2isleaf=node2isleaf )
+                bestBottomLength=estimateBranchLengthWithDerivative(midTopVector,downVect,mutMatrix, node2isleaf=node2isleaf)
+                newMidVector=mergeVectorsUpDown(upVect,bestTopLength,downVect,bestBottomLength,mutMatrix, node2isleaf=node2isleaf)
+            appendingCost=appendProbNode(newMidVector,removedPartials,bestAppendingLength,mutMatrix, node2isleaf=node2isleaf)
             if compensanteForBranchLengthChange: #if wanted, do a more thorough examination of the appending cost, taking into account a possible change in branch length of the branch on which to be appended.
-                initialCost=appendProbNode(upVect,downVect,distance,mutMatrix)
-                newPartialCost=appendProbNode(upVect,downVect,bestBottomLength+bestTopLength,mutMatrix)
+                initialCost=appendProbNode(upVect,downVect,distance,mutMatrix, node2isleaf=node2isleaf)
+                newPartialCost=appendProbNode(upVect,downVect,bestBottomLength+bestTopLength,mutMatrix, node2isleaf=node2isleaf)
                 optimizedScore=appendingCost+newPartialCost-initialCost
             else:
                 optimizedScore=appendingCost
@@ -2737,7 +2739,7 @@ def updateBLen(nodeList,node,mutMatrix,useRateVariation=False,mutMatrices=None):
     else:
         vectUp=node.probVectUpLeft
         cNum=1
-    bestLength=estimateBranchLengthWithDerivative(vectUp,cNode.probVect,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
+    bestLength=estimateBranchLengthWithDerivative(vectUp,cNode.probVect,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices, node2isleaf=(cNode.children==[]))
     cNode.dist=bestLength
     node.dirty=True
     cNode.dirty=True
@@ -3238,7 +3240,11 @@ def appendProbNode(probVectP,probVectC,bLen,mutMatrix,useRateVariation=False,mut
                             i2=entry2[0]
                         if len(entry1)==4:
                             if contribLength:
-                                totalFactor*=(( rootFreqs[i1]*mutMatrix[i1][i2]*contribLength*(1.0+mutMatrix[i1][i1]*entry1[2]) + rootFreqs[i2]*mutMatrix[i2][i1]*entry1[2]*(1.0+mutMatrix[i2][i2]*contribLength) )/rootFreqs[i1])
+                                totalFactor*=(( rootFreqs[i1]*mutMatrix[i1][i2]*contribLength
+                                                *(1.0+mutMatrix[i1][i1]*entry1[2])
+                                                + rootFreqs[i2]*mutMatrix[i2][i1]*entry1[2]
+                                                *(1.0+mutMatrix[i2][i2]*contribLength) )
+                                              /rootFreqs[i1])
                             else:
                                 totalFactor*=((rootFreqs[i2]*mutMatrix[i2][i1]*entry1[2] )/rootFreqs[i1])
                         else:
@@ -3501,7 +3507,7 @@ def calculateDerivative(ais,t):
 
 #function to optimize branch lengths.
 #calculate features of the derivative of the likelihood cost function wrt the branch length, then finds branch length that minimizes likelihood cost.
-def estimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,useRateVariation=False,mutMatrices=None):
+def estimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,useRateVariation=False,mutMatrices=None, node1isleaf=False, node2isleaf=False):
     c1=0.0
     ais=[]
     indexEntry1, indexEntry2, pos = 0, 0, 0
@@ -3732,11 +3738,11 @@ def traverseTreeToOptimizeBranchLengths(root,mutMatrix,testing=False,useRateVari
             upVect=node.up.probVectUpLeft
             child=1
         if node.dirty:
-            bestLength=estimateBranchLengthWithDerivative(upVect,node.probVect,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
+            bestLength=estimateBranchLengthWithDerivative(upVect,node.probVect,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices, node2isleaf=(node.children==[]))
             if bestLength or node.dist:
                 if testing:
-                    currentCost=appendProbNode(upVect,node.probVect,node.dist,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices, node1isLeaf= False, node2isLeaf= not bool(node.children))
-                    newCost=appendProbNode(upVect,node.probVect,bestLength,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices, node1isLeaf= False, node2isLeaf= bool(node.children))
+                    currentCost=appendProbNode(upVect,node.probVect,node.dist,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices, node1isLeaf= False, node2isleaf=(node.children==[]))
+                    newCost=appendProbNode(upVect,node.probVect,bestLength,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices, node1isLeaf= False, node2isleaf=(node.children==[]))
                     if newCost<currentCost-thresholdLogLKconsecutivePlacement:
                         print("New branch length")
                         print(currentCost,node.dist,newCost,bestLength)
@@ -3795,15 +3801,15 @@ def placeSubtreeOnTree(node,newPartials,appendedNode,newChildLK,bestBranchLength
         node=root
         probOldRoot = findProbRoot(node.probVect)
         rootUpLeft=rootVector(node.probVect,bestAppendingLength/2,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
-        bestRightLength=estimateBranchLengthWithDerivative(rootUpLeft,newPartials,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
+        bestRightLength=estimateBranchLengthWithDerivative(rootUpLeft,newPartials,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,node2isleaf=(node.children==[]))
         rootUpRight=rootVector(newPartials,bestRightLength,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
-        bestLeftLength=estimateBranchLengthWithDerivative(rootUpRight,node.probVect,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
+        bestLeftLength=estimateBranchLengthWithDerivative(rootUpRight,node.probVect,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,node2isleaf=(node.children==[]))
         secondBranchLengthOptimizationRound=True
         if secondBranchLengthOptimizationRound: #if wanted, do a second round of branch length optimization
             rootUpLeft=rootVector(node.probVect,bestLeftLength,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
-            bestRightLength=estimateBranchLengthWithDerivative(rootUpLeft,newPartials,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
+            bestRightLength=estimateBranchLengthWithDerivative(rootUpLeft,newPartials,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,node2isleaf=(node.children==[]))
             rootUpRight=rootVector(newPartials,bestRightLength,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
-            bestLeftLength=estimateBranchLengthWithDerivative(rootUpRight,node.probVect,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
+            bestLeftLength=estimateBranchLengthWithDerivative(rootUpRight,node.probVect,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,node2isleaf=(node.children==[]))
         probVectRoot,probRoot = mergeVectors(node.probVect,bestLeftLength,newPartials,bestRightLength,mutMatrix,returnLK=True,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
         probRoot+= findProbRoot(probVectRoot)
         parentLKdiff=probRoot-probOldRoot
@@ -3989,7 +3995,7 @@ def traverseTreeForTopologyUpdate(node,mutMatrix,strictTopologyStopRules=strictT
         originalLK=appendProbNode(vectUp,node.probVect,bestCurrenBLen,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
         bestCurrentLK=originalLK
         if bestCurrentLK<thresholdTopologyPlacement:
-            bestCurrenBLen=estimateBranchLengthWithDerivative(vectUp,node.probVect,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
+            bestCurrenBLen=estimateBranchLengthWithDerivative(vectUp,node.probVect,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices, node2isleaf=(node.children==[]))
             if bestCurrenBLen or node.dist:
                 if (not bestCurrenBLen) or (not node.dist) or node.dist/bestCurrenBLen>1.01 or node.dist/bestCurrenBLen<0.99:
                     bLenChanged=True
@@ -4895,7 +4901,7 @@ def getFlag(entry1, node1isleaf):
         if type(flag1) != bool: #then it is a second branch length element.
             flag1 = False
     else:
-        if node1isleaf == []:
+        if node1isleaf:
             flag1 = True
         elif entry1[0] >= 5:  # cases of O or N
             flag1 = False
@@ -4911,7 +4917,7 @@ def getFlags(entry1, entry2, node1isleaf, node2isleaf):
         if type(flag1) != bool: #then it is a second branch length element.
             flag1 = False
     else:
-        if node1isleaf == []:
+        if node1isleaf:
             flag1 = True
         elif entry1[0] >= 5:  # cases of O or N
             flag1 = False
@@ -4923,7 +4929,7 @@ def getFlags(entry1, entry2, node1isleaf, node2isleaf):
         if type(flag2) != bool: #then it is a second branch length element.
             flag2 = False
     else:
-        if node2isleaf == []:
+        if node2isleaf:
             flag2 = True
         elif entry2[0] >= 5:  # cases of O or N
             flag2 = False
@@ -5840,7 +5846,7 @@ def reCalculateWithErrors(root,mutMatrix, errorRate, checkExistingAreCorrect=Fal
                     direction=1
 
 
-def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,useRateVariation=False,mutMatrices=None):
+def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,useRateVariation=False,mutMatrices=None, node1isleaf=False, node2isleaf=False):
     c1=0.0
     ais=[]
     indexEntry1, indexEntry2, pos = 0, 0, 0
@@ -5874,7 +5880,7 @@ def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,us
                     i1=refIndeces[pos]
                     if len(entry1)==5: # ErrorRate: ==4 to ==5
                         coeff0=rootFreqs[i1]*entry2[-1][i1]
-                        coeff1=0.0 #TODO: take into account error rates if flag1 or flag2 ??
+                        coeff1=0.0
                         for i in range4:
                             coeff0+=rootFreqs[i]*mutMatrix[i][i1]*entry1[2]*entry2[-1][i]
                             coeff1+=mutMatrix[i1][i]*entry2[-1][i]
@@ -5896,17 +5902,25 @@ def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,us
                     pos+=1
 
                 else: #entry1 is R and entry2 is a different but single nucleotide
+                    i1 = refIndeces[pos]
+                    i2 = entry2[0]
                     if len(entry1)==5: # ErrorRate: ==4 to ==5
                         if useRateVariation: #again f1 can only be true if the error rate is inherited across the root.
-                            mutMatrix=mutMatrices[pos] #TODO: errorRate
-                        i1=refIndeces[pos]
-                        i2=entry2[0]
-                        if contribLength:
-                            coeff0=rootFreqs[i1]*mutMatrix[i1][i2]*contribLength+rootFreqs[i2]*mutMatrix[i2][i1]*entry1[2]
-                            coeff1=rootFreqs[i1]*mutMatrix[i1][i2]
+                            mutMatrix=mutMatrices[pos]
+                        if flag1 or flag2: #TODO error rate
+                            coeff0 = rootFreqs[i1] * mutMatrix[i1][i2] * contribLength \
+                                     + rootFreqs[i2] * mutMatrix[i2][i1] * entry1[2]
+                            coeff1 = rootFreqs[i1] * mutMatrix[i1][i2]
+
                         else:
-                            coeff0=rootFreqs[i2]*mutMatrix[i2][i1]*entry1[2]
-                            coeff1=rootFreqs[i1]*mutMatrix[i1][i2]
+                            if contribLength:
+                                coeff0=rootFreqs[i1]*mutMatrix[i1][i2]*contribLength\
+                                       +rootFreqs[i2]*mutMatrix[i2][i1]*entry1[2]
+                                coeff1=rootFreqs[i1]*mutMatrix[i1][i2]
+                            else:
+                                coeff0=rootFreqs[i2]*mutMatrix[i2][i1]*entry1[2]
+                                coeff1=rootFreqs[i1]*mutMatrix[i1][i2]
+
                         coeff0=coeff0/coeff1
                     else: #ErrorRate : only f2 can be true.
                         if contribLength:
@@ -5962,7 +5976,7 @@ def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,us
                 if entry2[0]==entry1[0]:
                     c1+=mutMatrix[entry1[0]][entry1[0]] #ErrorRate: nothing changes
                 else: #entry1 is a nucleotide and entry2 is not the same as entry1
-                    i1=entry1[0] #TODO include errorRate
+                    i1=entry1[0]
                     if entry2[0]<5: #entry2 is a nucleotide
                         if entry2[0]==4:
                             i2=refIndeces[pos]
@@ -5970,16 +5984,22 @@ def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,us
                             i2=entry2[0]
 
                         if len(entry1)==5: # ErrorRate: ==4 to ==5
-                            if contribLength:
-                                coeff0=rootFreqs[i1]*mutMatrix[i1][i2]*contribLength+rootFreqs[i2]*mutMatrix[i2][i1]*entry1[2]
-                                coeff1=rootFreqs[i1]*mutMatrix[i1][i2]
+                            if flag1 or flag2:  # TODO error rate
+                                coeff0 = rootFreqs[i1] * mutMatrix[i1][i2] * contribLength \
+                                         + rootFreqs[i2] * mutMatrix[i2][i1] * entry1[2]
+                                coeff1 = rootFreqs[i1] * mutMatrix[i1][i2]
+
                             else:
-                                coeff0=rootFreqs[i2]*mutMatrix[i2][i1]*entry1[2]
-                                coeff1=rootFreqs[i1]*mutMatrix[i1][i2]
+                                if contribLength:
+                                    coeff0=rootFreqs[i1]*mutMatrix[i1][i2]*contribLength+rootFreqs[i2]*mutMatrix[i2][i1]*entry1[2]
+                                    coeff1=rootFreqs[i1]*mutMatrix[i1][i2]
+                                else:
+                                    coeff0=rootFreqs[i2]*mutMatrix[i2][i1]*entry1[2]
+                                    coeff1=rootFreqs[i1]*mutMatrix[i1][i2]
                             coeff0=coeff0/coeff1
                         else:
                             if contribLength:
-                                coeff0=contribLength
+                                coeff0=contribLength + errorRate*flag2/(3*mutMatrix[i1][i2])
                             else:
                                 coeff0=0.0
                         ais.append(coeff0)
@@ -6128,8 +6148,8 @@ def traverseTopology(node, function, leafsOnly=False):
         newNode=nodesToVisit.pop()
         for c in newNode.children:
             nodesToVisit.append(c)
-            if not node.children or not leafsOnly:
-                function(node)
+        if not node.children or not leafsOnly:
+            function(newNode)
 
 def countEntries(node):
     numNodes[0]+=1
@@ -6152,6 +6172,40 @@ def countEntriesAll(root):
     print("Nucs per node: "+str(float(numNodes[1])/numNodes[0]))
     print("Ns per node: "+str(float(numNodes[3])/numNodes[0]))
 
+def counttotBLenAll(root):
+    global totBLen
+    totBLen = 0
+    def counttotBLen(node):
+        global totBLen
+        print(node.dist)
+        totBLen += node.dist
+    traverseTopology(root, counttotBLen)
+    print("Tot branch length: "+str(totBLen))
+    return totBLen
+
+def countFlagsAll(root):
+    global totFlags
+    totFlags = 0
+    global totMinorSeqs
+    totMinorSeqs = 0
+    global totFlaggedElems
+    totFlaggedElems =0
+    def countFlags(node):
+        global totFlags
+        global totFlaggedElems
+        global totMinorSeqs
+        pos=0
+        if hasattr(node, 'minorSequences'):
+            totMinorSeqs += len(node.minorSequences)
+        for entry in node.probVect:  # or should i also check the node.probvectup etc?
+            totFlags += 1 if (type(entry[-1]) == bool and entry[-1]== True) else 0
+            totFlaggedElems += getFlag(entry, node.children==[])*(entry[1]-pos)
+            pos = entry[1]
+    traverseTopology(root, countFlags)
+    print("Tot #flags set to True: "+str(totFlags)) # was only 79 in a set of 174seq*1500 nucleotides.
+    print("Tot #positions where a flag(=True) will be taken into account: "+str(totFlags))
+    print("#minor sequences: "+str(totMinorSeqs))
+    return totFlags
 
 
 #QUESTION: in example, MAPLE_input_example.txt, the first sample seems to be not included in the tree.
@@ -6159,8 +6213,10 @@ if True:# if errorRate:
     import copy
     t0 = copy.deepcopy(t1)
     reCalculateAllGenomeLists(t1,mutMatrix)
+    traverseTreeToOptimizeBranchLengths(t1,mutMatrix,testing=False,useRateVariation=rateVariation,mutMatrices=mutMatrices)
     t0_1 = copy.deepcopy(t1)
     countEntriesAll(t1)
+    oldTotBLen = counttotBLenAll(t1)
     errorRate =0.0005
     estimateBranchLengthWithDerivative = errorRateEstimateBranchLengthWithDerivative
     getContribLength = getContribLengthErrorRate
@@ -6178,7 +6234,12 @@ if True:# if errorRate:
     reCalculateWithErrors(t1,mutMatrix, errorRate)
     print("ErrorRate included")
     countEntriesAll(t1) #checking if node compositions remain the same. .. Difficult to conlcude anything based on this, since node.dist is often False.
+    traverseTreeToOptimizeBranchLengths(t1,mutMatrix,testing=False,useRateVariation=rateVariation,mutMatrices=mutMatrices)
+    newTotBLen = counttotBLenAll(t1)
+    print('diff tot blen '+ str(newTotBLen - oldTotBLen))
+    print( 'expected dif = errorRate*nsamples/subtitutionrate ' + str(errorRate*178) )
     print('x')
+
 # set to ErrorRate functions
 
 
