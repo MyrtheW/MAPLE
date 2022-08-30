@@ -750,7 +750,7 @@ def shortenLower(vec):
 
 
 #define partial likelihood vector for a sample given its data
-def probVectTerminalNodeOld(diffs):
+def probVectTerminalNode(diffs):
     if diffs is None:
         probVect=[(5,lRef)]
         return probVect
@@ -788,7 +788,7 @@ def probVectTerminalNodeOld(diffs):
     return probVect
 
 #Myrthe
-def probVectTerminalNode(diffs):
+def probVectTerminalNodeMyrt(diffs):
     if diffs is None:
         probVect=[(5,lRef)]
         return probVect
@@ -3951,12 +3951,12 @@ def cutAndPasteNode(node,bestNode,bestBranchLengths,bestLK,mutMatrix,useRateVari
     #verbose=True
     if verbose or debugging:
         print("In cutAndPasteNode() removing subtree from the tree, subtree root partials: ")
-        #print(node.probVect)
-        #print("likelihoods to which it is attached:")
-        #if node==node.up.children[0]:
-        #	print(node.up.probVectUpRight)
-        #else:
-        #	print(node.up.probVectUpLeft)
+        print(node.probVect)
+        print("likelihoods to which it is attached:")
+        if node==node.up.children[0]:
+        	print(node.up.probVectUpRight)
+        else:
+        	print(node.up.probVectUpLeft)
     parentNode=node.up
     if node==parentNode.children[0]:
         sibling=parentNode.children[1]
@@ -3983,17 +3983,17 @@ def cutAndPasteNode(node,bestNode,bestBranchLengths,bestLK,mutMatrix,useRateVari
             print("cutAndPasteNode(), sibling node is root")
         #sibling.probVectTot=rootVector(sibling.probVect,False,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
         if sibling.children:
-            sibling.probVectUpRight=rootVector(sibling.children[1].probVect,sibling.children[1].dist,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
-            sibling.probVectUpLeft=rootVector(sibling.children[0].probVect,sibling.children[0].dist,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
-            #if debugging:
-            #	print("sibling node is root, children distances: "+str(sibling.children[0].dist)+" "+str(sibling.children[1].dist)+" new upLeft:")
-            #	print(sibling.probVectUpLeft)
+            sibling.probVectUpRight=rootVector(sibling.children[1].probVect,sibling.children[1].dist,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices, isLeaf=sibling.children[1].children==[])
+            sibling.probVectUpLeft=rootVector(sibling.children[0].probVect,sibling.children[0].dist,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices, isLeaf=sibling.children[0].children==[])
+            if debugging:
+            	print("sibling node is root, children distances: "+str(sibling.children[0].dist)+" "+str(sibling.children[1].dist)+" new upLeft:")
+            	print(sibling.probVectUpLeft)
             nodeList=[(sibling.children[0],2),(sibling.children[1],2)]
             updatePartials(nodeList,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
-            #if debugging:
-            #	print("sibling node is root, after updatePartials, children distances: "+str(sibling.children[0].dist)+" "+str(sibling.children[1].dist)+" new upLeft:")
-            #	print(sibling.probVectUpLeft)
-            #	print(sibling.children)
+            if debugging:
+            	print("sibling node is root, after updatePartials, children distances: "+str(sibling.children[0].dist)+" "+str(sibling.children[1].dist)+" new upLeft:")
+            	print(sibling.probVectUpLeft)
+            	print(sibling.children)
             #updatePartialsFromTop(sibling.children[0],sibling.probVectUpRight,mutMatrix)
             #updatePartialsFromTop(sibling.children[1],sibling.probVectUpLeft,mutMatrix)
     else:
@@ -4926,8 +4926,7 @@ if inputTree=="" or largeUpdate or rateVariation:
     #print("R per node: "+str(float(numNodes[2])/numNodes[0]))
     #print("Non-O per node: "+str(float(numNodes[1]+numNodes[2]+numNodes[3])/numNodes[0]))
 
-# Myrthe ----------------------------------
-#from MAPLEv0_1_8_experimental import *
+
 
 def addErrorTerminalNode(node, errorRateOneThird):
     for entry in node.probVect: # loop over the lower likelihood entries in the genome list
@@ -6089,7 +6088,7 @@ def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,us
                             i2=entry2[0]
 
                         if len(entry1)==5: # ErrorRate: ==4 to ==5
-                            if flag1:  # TODO error rate
+                            if flag1:
                                 c1up = entry1[2]
                                 pi2pi1 = rootFreqs[i2] / rootFreqs[i1]
                                 coeff0 = (errorRate * flag2 / 3 + mutMatrix[i1][i2] * contribLength * \
@@ -6329,7 +6328,7 @@ def countFlagsAll(root):
 
 
 #QUESTION: in example, MAPLE_input_example.txt, the first sample seems to be not included in the tree.
-if True:# if errorRate:
+if errorRate:
     import copy
     t0 = copy.deepcopy(t1)
     reCalculateAllGenomeLists(t1,mutMatrix)
@@ -6338,7 +6337,6 @@ if True:# if errorRate:
     oldTotBLen = counttotBLenAll(t1)
     t0_1 = copy.deepcopy(t1)
     oldTotBLen = counttotBLenAll(t0_1)
-    errorRate =0.0005
     estimateBranchLengthWithDerivative = errorRateEstimateBranchLengthWithDerivative
     getContribLength = getContribLengthErrorRate
     mergeVectors = mergeVectorsError
