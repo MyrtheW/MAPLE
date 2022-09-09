@@ -2150,6 +2150,7 @@ totalMissedMinors=[0]
 # removedBLen is such branch length that optimizes the current placement - it will be used to place the subtree attached at other nodes of the tree.
 
 def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTopologyStopRules=strictTopologyStopRules,allowedFailsTopology=allowedFailsTopology,thresholdLogLKtopology=thresholdLogLKtopology,useRateVariation=False,mutMatrices=None):
+    currentLK = bestLKdiff
     bestNode=node
     bestNodes=[]
     nodesToVisit=[]
@@ -2169,8 +2170,8 @@ def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTop
         # a flag that says if the updated genome list passed needs still updating, or if it has become identical to the pre-existing genome list in the tree (which usually happens after a while),
         # the likelihood cost of appending at the last node encountered in this direction,
         # a number of consecutively failed traversal steps since the last improvement found (if this number goes beyond a threshold, traversal in the considered direction might be halted).
-        nodesToVisit.append((node.up,childUp,node.children[1-child].probVect,node.children[1-child].dist+node.dist,True,bestLKdiff,0))
-        nodesToVisit.append((node.children[1-child],0,vectUpUp,node.children[1-child].dist+node.dist,True,bestLKdiff,0))
+        nodesToVisit.append((node.up,childUp,node.children[1-child].probVect,node.children[1-child].dist+node.dist,True,bestLKdiff,0, node.children[1-child].children==[]))
+        nodesToVisit.append((node.children[1-child],0,vectUpUp,node.children[1-child].dist+node.dist,True,bestLKdiff,0, False))
     else:
         # case node is root
         if node.children[1-child].children: # case there is only one sample outside of the subtree doesn't need to be considered
@@ -2178,13 +2179,13 @@ def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTop
             child2=node.children[1-child].children[1]
             vectUp1=rootVector(child2.probVect,child2.dist,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,
                                isLeaf=child2.children==[])
-            nodesToVisit.append((child1,0,vectUp1,child1.dist,True,bestLKdiff,0))
+            nodesToVisit.append((child1,0,vectUp1,child1.dist,True,bestLKdiff,0, False))
             vectUp2=rootVector(child1.probVect,child1.dist,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,
                                isLeaf=child1.children==[])
-            nodesToVisit.append((child2,0,vectUp2,child2.dist,True,bestLKdiff,0))
+            nodesToVisit.append((child2,0,vectUp2,child2.dist,True,bestLKdiff,0, False))
 
     while nodesToVisit:
-        t1,direction,passedPartials,distance,needsUpdating,lastLK,failedPasses=nodesToVisit.pop()
+        t1,direction,passedPartials,distance,needsUpdating,lastLK,failedPasses, passedPartialsIsLeaf=nodesToVisit.pop()
         if direction==0:
             #consider the case we are moving from a parent to a child
             if t1.dist and (not (t1.up==node or t1.up==None)):
@@ -2199,7 +2200,8 @@ def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTop
                     midTot=t1.probVectTotUp
                 if midTot==None:
                     continue
-                midProb=appendProbNode(midTot,removedPartials,removedBLen,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
+                midProb=appendProbNode(midTot,removedPartials,removedBLen,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,
+                                       node2isleaf=removedPartialsIsLeaf) # because removedPartials=node.children[child].probVect
                 if midProb>bestLKdiff:
                     bestLKdiff=midProb
                     bestNode=t1
@@ -2234,7 +2236,7 @@ def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTop
                 else:
                     vectUpRight=t1.probVectUpRight
                 if vectUpRight!=None:
-                    nodesToVisit.append((child,0,vectUpRight,child.dist,needsUpdating,midProb,failedPasses))
+                    nodesToVisit.append((child,0,vectUpRight,child.dist,needsUpdating,midProb,failedPasses, False))
                 child=t1.children[1]
                 otherChild=t1.children[0]
                 if needsUpdating:
@@ -2243,7 +2245,7 @@ def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTop
                 else:
                     vectUpLeft=t1.probVectUpLeft
                 if vectUpLeft!=None:
-                    nodesToVisit.append((child,0,vectUpLeft,child.dist,needsUpdating,midProb,failedPasses))
+                    nodesToVisit.append((child,0,vectUpLeft,child.dist,needsUpdating,midProb,failedPasses, False)) #no leaf
 
         else: #case when crawling up from child to parent
             otherChild=t1.children[2-direction]
@@ -2251,7 +2253,7 @@ def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTop
             if t1.dist and t1.up!=None: #try appending mid-branch
                 if needsUpdating:
                     midBottom=mergeVectors(otherChild.probVect,otherChild.dist,passedPartials,distance,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,
-                                           node1isleaf=otherChild.children==[] )
+                                           node1isleaf=otherChild.children==[], node2isleaf= passedPartialsIsLeaf)
                     if midBottom==None:
                         continue
                     if t1==t1.up.children[0]:
@@ -2303,7 +2305,7 @@ def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTop
                         if needsUpdating:
                             vectUpUp=t1.up.probVectUpLeft
                     if needsUpdating:
-                        vectUp=mergeVectorsUpDown(vectUpUp,t1.dist,passedPartials,distance,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices, node2isleaf=False)
+                        vectUp=mergeVectorsUpDown(vectUpUp,t1.dist,passedPartials,distance,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices, node2isleaf=passedPartialsIsLeaf)
                     else:
                         if direction==1:
                             vectUp=t1.probVectUpLeft
@@ -2313,31 +2315,33 @@ def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTop
                     if vectUp==None:
                         continue
                     else:
-                        nodesToVisit.append((otherChild,0,vectUp,otherChild.dist,needsUpdating,midProb,failedPasses))
+                        nodesToVisit.append((otherChild,0,vectUp,otherChild.dist,needsUpdating,midProb,failedPasses, False))
                     #now pass the crawling up to the parent node
                     if needsUpdating:
                         if midBottom==None:
                             midBottom=mergeVectors(otherChild.probVect,otherChild.dist,passedPartials,distance,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,
-                                                   node1isleaf=otherChild.children==[] )#, node1isleaf= node1isleaf,node2isleaf=node2isleaf )
+                                                   node1isleaf=otherChild.children==[], node2isleaf=passedPartialsIsLeaf )#, node1isleaf= node1isleaf,node2isleaf=node2isleaf )
                             if midBottom==None:
                                 continue
                     else:
                         midBottom=t1.probVect
-                    nodesToVisit.append((t1.up,upChild+1,midBottom,t1.dist,needsUpdating,midProb,failedPasses))
+                    nodesToVisit.append((t1.up,upChild+1,midBottom,t1.dist,needsUpdating,midProb,failedPasses, False))
                 #now consider case of root node
                 else:
                     if needsUpdating:
-                        vectUp=rootVector(passedPartials,distance,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices, isLeaf=False)
+                        vectUp=rootVector(passedPartials,distance,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices, isLeaf=passedPartialsIsLeaf)
                     else:
                         if direction==1:
                             vectUp=t1.probVectUpLeft
                         else:
                             vectUp=t1.probVectUpRight
-                    nodesToVisit.append((otherChild,0,vectUp,otherChild.dist,needsUpdating,midProb,failedPasses))
+                    nodesToVisit.append((otherChild,0,vectUp,otherChild.dist,needsUpdating,midProb,failedPasses, False))
 
     #Initial exploration is finished.
     #Now, for each branch within threshold likelihood distance from the best found, optimize branch lengths.
     #Use optimized scores to select final best branch
+
+    #todo bestBranchLengths = (none,none,none) but bestCurrentLK has improved...
     bestBranchLengths=(None,None,None)
     bestScore=bestLKdiff
     compensanteForBranchLengthChange=True
@@ -2395,7 +2399,7 @@ def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTop
                 optimizedScore=appendingCost+newPartialCost-initialCost
             else:
                 optimizedScore=appendingCost
-            if optimizedScore>=bestScore:
+            if optimizedScore>=bestScore: # if this statement is never true, bestBranchLengths remains (None,none, none)
                 bestNode=t1
                 bestScore=optimizedScore
                 bestBranchLengths=(bestTopLength,bestBottomLength,bestAppendingLength)
@@ -2768,7 +2772,7 @@ def updatePartials(nodeList,mutMatrix,useRateVariation=False,mutMatrices=None):
             if not updatedBLen:
                 if node.dist and node.up!=None:
                     newTot=mergeVectorsUpDown(vectUpUp,node.dist/2,node.probVect,node.dist/2,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,
-                                              node2isleaf=node.children[childNum].children==[])
+                                              node2isleaf=node.children==[]) #.children[childNum]
                     if newTot==None:
                         updateBLen(nodeList,node,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
                         updatedBLen=True
@@ -3476,6 +3480,7 @@ def traverseTreeToOptimizeBranchLengths(root,mutMatrix,testing=False,useRateVari
 # now explore exactly which position near node is best for placement (direct child, sibling or sibling of existing child), and which are the best branch lengths,
 #then add the subtree at that position of the tree, and update all the internal probability vectors.
 def placeSubtreeOnTree(node,newPartials,appendedNode,newChildLK,bestBranchLengths,mutMatrix,useRateVariation=False,mutMatrices=None, isLeaf=False):
+    #isLeaf = appendedNode.children ==[]
     bestAppendingLength=bestBranchLengths[2]
     bestUpLength=bestBranchLengths[0]
     bestDownLength=bestBranchLengths[1]
@@ -3569,8 +3574,12 @@ def placeSubtreeOnTree(node,newPartials,appendedNode,newChildLK,bestBranchLength
     newInternalNode.dist=bestUpLength
     #newNode.probVect=newPartials
     newInternalNode.probVect=mergeVectors(node.probVect,bestDownLength,newPartials,bestAppendingLength,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,
-                                             node1isleaf=node.children==[],
+                                             node1isleaf=(node.children==[]),
                                              node2isleaf=isLeaf)
+    #todo why does this become 'None'? --> because bestdownlength and best appending length are none
+    #newPartials arrives from the appendedNode,
+    # 'node' is the node it has been appended to
+    #isLeaf, says whether the appendedNode has children or not
     newInternalNode.probVectUpRight=mergeVectorsUpDown(vectUp,bestUpLength,newPartials,bestAppendingLength,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,
                                              node1isleaf=False,
                                              node2isleaf=isLeaf)
@@ -3822,7 +3831,7 @@ def startTopologyUpdates(node,mutMatrix,checkEachSPR=False,strictTopologyStopRul
                 newTreeLK=calculateTreeLikelihood(root,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
                 reCalculateAllGenomeLists(root,mutMatrix, checkExistingAreCorrect=True,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
                 #print("Post-SPR tree likelihood: "+str(newTreeLK))
-                print("In startTopologyUpdates, LK score of improvement "+str(newTreeLK)+" - "+str(oldTreeLK)+" = "+str(newTreeLK-oldTreeLK)+", was supposed to be "+str(improvement))
+                #print("In startTopologyUpdates, LK score of improvement "+str(newTreeLK)+" - "+str(oldTreeLK)+" = "+str(newTreeLK-oldTreeLK)+", was supposed to be "+str(improvement))
                 if newTreeLK-oldTreeLK < improvement-1.0:
                     print("In startTopologyUpdates, LK score of improvement "+str(newTreeLK)+" - "+str(oldTreeLK)+" = "+str(newTreeLK-oldTreeLK)+" is less than what is supposd to be "+str(improvement))
                     #raise Exception("exit")
@@ -4587,15 +4596,34 @@ if inputTree=="" or largeUpdate or rateVariation:
 
 
 #----------------------------------------------------------
-"""ERROR RATE FUNCTIONS"""
-def getPartialVec(i12, flag, totLen, errorRate, upNode=False, method1=True): #upNode--> true if node is above the branch
+"""
+ERROR RATE FUNCTIONS
+Below are my error rate functions, that fall in three main categories: 
+1) Functions, specifically used when the error rate is incorporated. 
+2) Functions from the original MAPLE code
+   that I have adapted, e.g. in terms of the length of the entries that is checked for, and additional calculations. 
+3) Functions to test the error rate functions
+
+Other functions outside of this scope have also undergone some small changes to pass on whether a genomelist arrived from a leaf or not, 
+which is crucial to extract the flags for each of its entries.  
+"""
+def getPartialVec(i12, flag, totLen, errorRate, upNode=False):
+    """
+    When merging a CATGR-entry with an O entry, or for the case that T1=/=T2, it is useful to
+    first create the partial vectors of the entries seperately, instead of working with one 'newVec'.
+    With this function we create the partial likelihood vector for the considered entry:
+    (if needed) we account for the error rates, and (if needed) we propagate the vector along its branch.
+    :param i12: i1 or i2;  the nucleotide that was stored in the original entry
+    :param flag: whether we should take into account the error rate
+    :param totLen: branch length along which the vector should be 'mutated'
+    :param upNode: should be True if the nucleotide was observed above the branch.
+    :return: the new likelihood vector for this entry.
+    """
     if flag:
         partialVec1 = [flag * errorRate / 3] * 4  # without error rate [0.0, 0.0, 0.0, 0.0]
         partialVec1[i12] = 1.0 - errorRate * flag  #Approximation 1, without error rate: 1.0
         if totLen:
-            #printDifMethods(i12, flag, totLen, errorRate)
-            mutatedPartialVec1 = [0]*4
-            #if APPROX1:  # approximation 1
+            mutatedPartialVec1 = [0]*4 #Approximation 1
             for j in range4:
                 tot = 0.0
                 for i in range4:
@@ -4607,8 +4635,7 @@ def getPartialVec(i12, flag, totLen, errorRate, upNode=False, method1=True): #up
                 tot += partialVec1[j]
                 mutatedPartialVec1[j] = tot
             partialVec1 = mutatedPartialVec1
-
-            # else:
+            # else: an approximate version
             #     for i in range4:
             #         if i == i12:
             #             if APPROX1: partialVec1[i] *= (1.0 + mutMatrix[i][i] * totLen)
@@ -4634,16 +4661,19 @@ def getPartialVec(i12, flag, totLen, errorRate, upNode=False, method1=True): #up
             partialVec1[i12] = 1.0
     return partialVec1
 
-    # 2) add extra entry representing the flag to the genome list.
-    # As a consequence, the entries with a flag will be of length 4 or 5 (if its branch length element bridges the root).
-    # merge two lower child partial likelihood vectors to create a new one
-    # (and also calculate the logLk of the merging if necessary, which is currently only useful for the root but could also be useful to calculate the overall total likelihood of the tree).
 
 def addErrorTerminalNode(node, errorRateOneThird):
+    """
+    This function should only be run the first time the errors are incorporated in the tree.
+    It takes into account the error rates in the partial likelihood vectors of O-type entries, .
+    which arrive from ambiguity characters other than N, and we should derive the new probVector using the errorRate.
+    For the other entry types, nothing needs to be done: Since these are leaf nodes, no flags need to be set.
+    :param node: a leaf node
+    :param errorRateOneThird: the error rate, already divided by 3.
+    """
     for entry in node.probVect: # loop over the lower likelihood entries in the genome list
         #for position specific errors; check if errorRate[i] / 3 > thresholdProb: in such case the error rate doesnt have to be considered for the position
         # for position specific errors; check if errorRate[i] > thresholdHighError: store as O vector.
-        # You dont'have to to add an extra entry representing the flag to the genome list, because it can be checked whether a node is a child node
         if entry[0] == 6: # we are dealing with ambiguity characters other than N, and we should derive the new probVector using the errorRate.. We should not encounter this if onlyNambiguities==True:
             sumUnnormalizedVector =  sum([bool(item) for item in entry[-1]])
             if sumUnnormalizedVector ==2:
@@ -4658,10 +4688,12 @@ def addErrorTerminalNode(node, errorRateOneThird):
                         entry[-1][i] = errorRateOneThird
                     else:  # if entry[-1][i]==⅓:
                         entry[-1][i] -= errorRateOneThird / 3 # ⅓ - ε/9
-            # this can be done faster with numpy
-        #else: #entry[0]==5 of type N, we don't take this into account now.
 
 def getFlag(entry, isLeaf=False):
+    """
+    Given an entry, and whether this entry is from a genomeList that arrived from a leaf node,
+    return whether the flag is True or False
+    """
     if entry[0] >= 5:  # cases of O or N
         flag = False
     elif len(entry) >= 4: #length 4 or 5 and no O or N entry
@@ -4674,31 +4706,10 @@ def getFlag(entry, isLeaf=False):
     return flag
 
 
-# def printDifMethods(i12, flag, totLen, errorRate):
-#     partialVec1 = [flag * errorRate / 3] * 4  # without error rate [0.0, 0.0, 0.0, 0.0]
-#     partialVec1[i12] = 1.0 - errorRate * flag
-#     mutatedPartialVec1 = [0]*4
-#     print("method1")  # extensive calculation method 1
-#     for j in range4:
-#         tot = 0.0
-#         for i in range4:
-#             tot += mutMatrix[j][i] * partialVec1[i]
-#         tot *= totLen
-#         tot += partialVec1[j]
-#         mutatedPartialVec1[j] = tot
-#     print(mutatedPartialVec1)
-#     print("method2")   # approximate calculation method 2.. is this really method 2?
-#     for i in range4:
-#         if i == i12:
-#             partialVec1[i] *= (1.0 + mutMatrix[i][i] * totLen)
-#         else:
-#             partialVec1[i] *= (mutMatrix[i12][i] * totLen)
-#     print(partialVec1)
-#
-
-#calculate the probability that results from combining a lower likelihood genome list of the root with root frequencies.
-#Could maybe be combined with function rootVector() ?
 def findProbRootError(probVect):
+    """
+    The errorrate version of 'findProbRootError'.
+    """
     logLK=0.0
     logFactor=1.0
     pos=0
@@ -4719,9 +4730,12 @@ def findProbRootError(probVect):
     return logLK
 
 
-#function to calculate likelihood cost of appending node to parent node
-#differently from appendProb, this allows the bottom node to be internal, not just a sample.
+
 def appendProbNodeErrorRate(probVectP,probVectC,bLen,mutMatrix,useRateVariation=False,mutMatrices=None, node2isleaf=False):
+    """
+    The errorrate version of 'appendProbNode'.
+    :param node2isleaf: True if probVectC arrives from a leaf node. (probVectP can never arrive from a leaf node)
+    """
     Lkcost, indexEntry1, indexEntry2, totalFactor, pos = 0.0, 0, 0, 1.0, 0
     entry1=probVectP[indexEntry1]
     entry2=probVectC[indexEntry2]
@@ -4800,7 +4814,7 @@ def appendProbNodeErrorRate(probVectP,probVectC,bLen,mutMatrix,useRateVariation=
                     if len(entry1)==5: #==5 instead ==4 ErrorRate:
                         tot=0.0
                         for i in range4:
-                            if i1==i: #todo this case didn't check it yet for e=0
+                            if i1==i:
                                 if APPROX1: tot2 =rootFreqs[i]*(1.0+mutMatrix[i][i]*entry1[2])*flag1*(1-errorRate) #Approximation 1
                                 else: tot2 = rootFreqs[i] * (1.0 + mutMatrix[i][i] * entry1[2] - flag1*errorRate) #Approximation 2
                             else:
@@ -4869,19 +4883,11 @@ def appendProbNodeErrorRate(probVectP,probVectC,bLen,mutMatrix,useRateVariation=
                     else:
                         i2=entry2[0]
                     if contribLength:
-                        tot1 = 0
+                        tot2=0
                         for i in range4:
-                            if i2 == i:
-                                if APPROX1: tot1 += entry1[-1][i]*(1.0 + mutMatrix[i][i] * contribLength) * (1 - errorRate * flag2)
-                                else: tot1 += entry1[-1][i]*(1.0 + mutMatrix[i][i] * contribLength - errorRate * flag2)
-                            else:
-                                tot1 += entry1[-1][i] * (mutMatrix[i][i2] * contribLength + flag2 * errorRate / 3)
-                        totalFactor *= tot1
-                        # TODO: add faster computation
-                        # for i in range4:
-                        #     tot2 = entry1[-1][i]*mutMatrix[i][i2]
-                        # tot1_2 = (entry1[-1][i2] + 4/3*errorRate*flag2*(1-entry1[-1][i2]) + contribLength*tot2 )
-                        # if not APPROX1: assert(tot1 == tot1_2)
+                            tot2 += entry1[-1][i]*mutMatrix[i][i2]
+                        tot1_2 = (entry1[-1][i2]*(1 - 4/3*errorRate * flag2) + 1/3*errorRate*flag2 + contribLength*tot2 )
+                        totalFactor *= tot1_2
                     else:
                         totalFactor*=entry1[-1][i2]
                 pos+=1
@@ -4954,9 +4960,10 @@ def appendProbNodeErrorRate(probVectP,probVectC,bLen,mutMatrix,useRateVariation=
     return Lkcost+log(totalFactor)
 
 
-#merge two partial likelihood vectors, one from above, probVect1, and one from below, probVect2
-#unlike appendProb(), this function is not used on a large part of the tree at each placement, but only in a small neighbourhood;
 def mergeVectorsUpDownErrorDetection(probVect1,bLenUp,probVect2,bLenDown,mutMatrix,useRateVariation=False,mutMatrices=None, node1isleaf=False, node2isleaf=False):
+    """
+    This function is used to aid error detection, to calculate the overall likelihood vectors of leaf nodes.
+    """
     indexEntry1, indexEntry2, pos = 0, 0, 0
     probVect=[]
     entry1=probVect1[indexEntry1]
@@ -5091,19 +5098,6 @@ def mergeVectorsUpDownErrorDetection(probVect1,bLenUp,probVect2,bLenDown,mutMatr
                     totLen2=entry2[2]
                     if bLenDown:
                         totLen2+=bLenDown
-            # if entry2[0]<5 and (not totLen2): #due to 0 distance, the entry will be of same type as entry2
-            #     if (not totLen1) and entry1[0]<5:
-            #         #print("mergeVectorsUpDown() returning None 1")
-            #         #print(entry1)
-            #         #print(entry2)
-            #         #print(totLen1)
-            #         #print(totLen2)
-            #         return None
-            #     pos=min(entry1[1],entry2[1])
-            #     probVect.append((entry2[0],pos))
-            # elif entry1[0]<5 and (not totLen1): #due to 0 distance, the entry will be of same type as entry1
-            #     pos=min(entry1[1],entry2[1])
-            #     probVect.append((entry1[0],pos))
             if entry1[0]<5: #entry 1 and 2 are different nucleotides
                 if useRateVariation:
                     mutMatrix=mutMatrices[pos]
@@ -5133,18 +5127,7 @@ def mergeVectorsUpDownErrorDetection(probVect1,bLenUp,probVect2,bLenDown,mutMatr
                         newVec.append(tot)
                 else:
                     newVec = getPartialVec(i1, flag1, totLen1, errorRate, upNode=True)
-                    # if totLen1:
-                    #     for i in range4:
-                    #         if i==i1:
-                    #             newVec.append(1.0+mutMatrix[i][i]*totLen1)
-                    #         else:
-                    #             newVec.append(mutMatrix[i1][i]*totLen1)
-                    # else:
-                    #     for i in range4:
-                    #         if i==i1:
-                    #             newVec.append(1.0)
-                    #         else:
-                    #             newVec.append(0.0)
+
                 if entry2[0]==6: #entry 2 is "O" and entry1 is a nucleotide
                     for j in range4:
                         tot=0.0
@@ -5168,17 +5151,6 @@ def mergeVectorsUpDownErrorDetection(probVect1,bLenUp,probVect2,bLenDown,mutMatr
                         i2=refIndeces[pos]
                     else:
                         i2=entry2[0]
-                    # if totLen2:
-                    #     for i in range4:
-                    #         if i==i2:
-                    #             newVec[i]*=1.0+mutMatrix[i][i]*totLen2
-                    #         else:
-                    #             newVec[i]*=mutMatrix[i][i2]*totLen2
-                    # else:
-                    #     for i in range4:
-                    #         if i!=i2:
-                    #             newVec[i]=0
-
                     partialVec2 = getPartialVec(i2, flag2, totLen2, errorRate, upNode=False)
                     #when flag2 is true and a Blen is added, the probabilities of observing other nucleotides than i2 get way smaller.
                     for i in range4:
@@ -5229,16 +5201,7 @@ def mergeVectorsUpDownErrorDetection(probVect1,bLenUp,probVect2,bLenDown,mutMatr
                         i2=refIndeces[pos]
                     else:
                         i2=entry2[0]
-                    # if totLen2:
-                    #     for i in range4:
-                    #         if i==i2:
-                    #             newVec[i]*=(1.0+mutMatrix[i][i]*totLen2)
-                    #         else:
-                    #             newVec[i]*=mutMatrix[i][i2]*totLen2
-                    # else:
-                    #     for i in range4:
-                    #         if i!=i2:
-                    #             newVec[i]=0.0
+
                     partialVec2 = getPartialVec(i2, flag2, totLen2, errorRate, upNode=False)
                     for i in range4:
                         newVec[i] *= partialVec2[i]
@@ -5279,15 +5242,17 @@ def mergeVectorsUpDownErrorDetection(probVect1,bLenUp,probVect2,bLenDown,mutMatr
     return probVect
 
 
-#merge two partial likelihood vectors, one from above, probVect1, and one from below, probVect2
-#unlike appendProb(), this function is not used on a large part of the tree at each placement, but only in a small neighbourhood;
 def mergeVectorsUpDownError(probVect1,bLenUp,probVect2,bLenDown,mutMatrix,useRateVariation=False,mutMatrices=None, node1isleaf=False, node2isleaf=False):
+    """
+    The errorrate version of 'mergeVectorsUpDownError'.
+    :param node2isleaf: True if probVect2 arrives from a leaf node. (probVect1 can never arrive from a leaf node)
+    """
     indexEntry1, indexEntry2, pos = 0, 0, 0
     probVect=[]
     entry1=probVect1[indexEntry1]
     entry2=probVect2[indexEntry2]
     while True:
-        flag1, flag2 = getFlag(entry1, isLeaf=node1isleaf), getFlag(entry2, isLeaf=node2isleaf)
+        flag1, flag2 = getFlag(entry1, isLeaf=False), getFlag(entry2, isLeaf=node2isleaf)
         if entry1[0]==5:
             if entry2[0]==5:
                 pos=min(entry1[1],entry2[1])
@@ -5458,18 +5423,6 @@ def mergeVectorsUpDownError(probVect1,bLenUp,probVect2,bLenDown,mutMatrix,useRat
                         newVec.append(tot)
                 else:
                     newVec = getPartialVec(i1, flag1, totLen1, errorRate, upNode=True)
-                    # if totLen1:
-                    #     for i in range4:
-                    #         if i==i1:
-                    #             newVec.append(1.0+mutMatrix[i][i]*totLen1)
-                    #         else:
-                    #             newVec.append(mutMatrix[i1][i]*totLen1)
-                    # else:
-                    #     for i in range4:
-                    #         if i==i1:
-                    #             newVec.append(1.0)
-                    #         else:
-                    #             newVec.append(0.0)
                 if entry2[0]==6: #entry 2 is "O" and entry1 is a nucleotide
                     for j in range4:
                         tot=0.0
@@ -5493,17 +5446,6 @@ def mergeVectorsUpDownError(probVect1,bLenUp,probVect2,bLenDown,mutMatrix,useRat
                         i2=refIndeces[pos]
                     else:
                         i2=entry2[0]
-                    # if totLen2:
-                    #     for i in range4:
-                    #         if i==i2:
-                    #             newVec[i]*=1.0+mutMatrix[i][i]*totLen2
-                    #         else:
-                    #             newVec[i]*=mutMatrix[i][i2]*totLen2
-                    # else:
-                    #     for i in range4:
-                    #         if i!=i2:
-                    #             newVec[i]=0
-
                     partialVec2 = getPartialVec(i2, flag2, totLen2, errorRate, upNode=False)
                     #when flag2 is true and a Blen is added, the probabilities of observing other nucleotides than i2 get way smaller.
                     for i in range4:
@@ -5554,16 +5496,6 @@ def mergeVectorsUpDownError(probVect1,bLenUp,probVect2,bLenDown,mutMatrix,useRat
                         i2=refIndeces[pos]
                     else:
                         i2=entry2[0]
-                    # if totLen2:
-                    #     for i in range4:
-                    #         if i==i2:
-                    #             newVec[i]*=(1.0+mutMatrix[i][i]*totLen2)
-                    #         else:
-                    #             newVec[i]*=mutMatrix[i][i2]*totLen2
-                    # else:
-                    #     for i in range4:
-                    #         if i!=i2:
-                    #             newVec[i]=0.0
                     partialVec2 = getPartialVec(i2, flag2, totLen2, errorRate, upNode=False)
                     for i in range4:
                         newVec[i] *= partialVec2[i]
@@ -5607,6 +5539,11 @@ def mergeVectorsUpDownError(probVect1,bLenUp,probVect2,bLenDown,mutMatrix,useRat
 
 def mergeVectorsError(probVect1, bLen1, probVect2, bLen2, mutMatrix, returnLK=False, useRateVariation=False,
                  mutMatrices=None, node1isleaf=False, node2isleaf=False):
+    """
+    The errorrate version of 'mergeVectors'.
+    :param node1isleaf: True if probVect1 arrives from a leaf node
+    :param node2isleaf: True if probVect2 arrives from a leaf node
+    """
     indexEntry1, indexEntry2, pos = 0, 0, 0
     probVect = []
     cumulPartLk = 0.0
@@ -5684,7 +5621,7 @@ def mergeVectorsError(probVect1, bLen1, probVect2, bLen2, mutMatrix, returnLK=Fa
                 if len(entry1) == 3:
                     totLen1 = bLen1
                 else:
-                    totLen1 = entry1[2] #Question how can the entry be of type "N" or "O" and have a branch length element?
+                    totLen1 = entry1[2]
                     if bLen1:
                         totLen1 += bLen1
 
@@ -5742,12 +5679,11 @@ def mergeVectorsError(probVect1, bLen1, probVect2, bLen2, mutMatrix, returnLK=Fa
                         for j in range4:
                             tot = 0.0
                             for i in range4:
-                                tot += mutMatrix[j][i] * entry2[-1][i] # Question: Where is the chronicler delta here? shouldn't you add 1, in case i == j, as described for cases T1=O and T2=O
+                                tot += mutMatrix[j][i] * entry2[-1][i]
                             tot *= totLen2
                             tot += entry2[-1][j]
                             newVec[j] *= tot
-                            #PROBLEM: result of entry1=O entry2=CATGR is different compared to entry2=O entry1=CATGR if flag(R)=T and bLen(R) = T
-                            #think this is solved now
+
                     else:
                         for j in range4:
                             newVec[j] *= entry2[-1][j]
@@ -5791,14 +5727,11 @@ def mergeVectorsError(probVect1, bLen1, probVect2, bLen2, mutMatrix, returnLK=Fa
                             probVect.append((6, pos, newVec))
                         else:
                             probVect.append((state, pos)) #no flag, because 0-branch length element and flag=False
-                        # probVect.append((6,pos,newVec))
                         if returnLK:
                             cumulPartLk += log(sumV)
                     else:
                         pos += 1
-                        # if flag2: #0-branch length but flag=T
-                        #     probVect.append((entry2[0], pos, 0.0, flag2))
-                        # else:
+
                         probVect.append((entry2[0], pos))
                         if returnLK:
                             cumulPartLk += log(newVec[i2])
@@ -5855,12 +5788,6 @@ def mergeVectorsError(probVect1, bLen1, probVect2, bLen2, mutMatrix, returnLK=Fa
                         partialVec2 = getPartialVec(i2, flag2, totLen2, errorRate, upNode=False)
                         for i in range4:
                             newVec[i] *= partialVec2[i]
-                    # if totLen2:
-                    #     for i in range4:
-                    #         if i == i2:
-                    #             newVec[i] *= (1.0 + mutMatrix[i][i] * totLen2)
-                    #         else:
-                    #             newVec[i] *= mutMatrix[i][i2] * totLen2
                         sumV = sum(newVec)
                         for i in range4:
                             newVec[i] = newVec[i] / sumV
@@ -5909,11 +5836,14 @@ def mergeVectorsError(probVect1, bLen1, probVect2, bLen2, mutMatrix, returnLK=Fa
 errorRate=0
 def reCalculateWithErrors(root,mutMatrix, errorRate=errorRate, checkExistingAreCorrect=False,countNodes=False,
                           countPseudoCounts=False,pseudoMutCounts=None,
-                          data=None,useRateVariation=False,mutMatrices=None):
-
-    # this function is a copy of recalculate all genome lists. Similarly to that, we loop in post-order, starting with calculating the lower-likelihoods of the leaves.
-    # after calculating all lowers, we will update other genome lists.
-    # this is also the point where we will first add the error rates.
+                          data=None,useRateVariation=False,mutMatrices=None, firstTimeError=False):
+    """
+    The errorrate version of 'reCalculateAllGenomeLists', Similarly to that, we loop in post-order, starting with calculating the lower-likelihoods of the leaves.
+    After calculating all lowers, we will update other genome lists.
+    This function is also used to add the error rates for the first time.
+    :param firstTimeError: This parameter should be true when the error rates are included for the first time
+    - only then should the partial likelihood vectors of the O-entries be updated for the leaf nodes.
+    """
     node = root # direction 0 means from parent, direction 1 means from a child
     lastNode = None
     direction = 0
@@ -5923,7 +5853,8 @@ def reCalculateWithErrors(root,mutMatrix, errorRate=errorRate, checkExistingAreC
             if node.children:
                 node = node.children[0]
             else: #leaf node:
-                addErrorTerminalNode(node, errorRateOneThird)
+                if firstTimeError:
+                    addErrorTerminalNode(node, errorRateOneThird)
                 if data != None: #if the initial tree is formed, data should be an empty list or None, since all nodes have been added.
                     raise Exception("Error: Data should be none ")
                 lastNode = node
@@ -5938,13 +5869,12 @@ def reCalculateWithErrors(root,mutMatrix, errorRate=errorRate, checkExistingAreC
                                         node.children[1].dist, mutMatrix, returnLK=False,
                                         useRateVariation=useRateVariation, mutMatrices=mutMatrices,
                                         node1isleaf= (node.children[0].children==[]),node2isleaf=(node.children[1].children==[]) )
-                # if checkExistingAreCorrect:
-                #     if areVectorsDifferentDebugging(newLower, node.probVect):
-                #         print(
-                #             "Inside reCalculateAllGenomeLists(), new lower at node is different from the old one, and it shouldn't be.")
-                #         print(newLower)
-                #         print(node.probVect)
-                #         raise Exception("exit")
+                if checkExistingAreCorrect:
+                    if areVectorsDifferentDebugging(newLower, node.probVect):
+                        print("Inside reCalculateAllGenomeLists(), new lower at node is different from the old one, and it shouldn't be.")
+                        print(newLower)
+                        print(node.probVect)
+                        raise Exception("exit")
                 if newLower == None:
                     if not node.children[0].dist:
                         nodeList = []
@@ -6005,6 +5935,7 @@ def reCalculateWithErrors(root,mutMatrix, errorRate=errorRate, checkExistingAreC
                     #newVect=getTot(node,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
                     if countPseudoCounts:
                         updatePesudoCounts(vectUp,node.probVect,pseudoMutCounts)
+
                     newVect=mergeVectorsUpDown(vectUp,node.dist/2,node.probVect,node.dist/2,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,
                                                node1isleaf= False,node2isleaf= node.children==[] ) #the upper likelihood cannot be from a leaf node, except if the branch length element is present
                     if checkExistingAreCorrect:
@@ -6020,13 +5951,6 @@ def reCalculateWithErrors(root,mutMatrix, errorRate=errorRate, checkExistingAreC
                                                          node2isleaf=node.children == []) # the upper likelihood cannot be from a leaf node, except if the branch length element is present
 
                             print(newVect)
-                            # case 6, 1191. No flags. Also when mergeVectorsUpDown (normal version) is used. After cutting and pasting a node around node S99.
-                            # I assume CheckExistingAreCorrect should be True since during cutandpastenode the genome lists should have been updated. I think this updating of genome lists happens/ should happen during updatepartials.
-                            # case 6, 838, from merging an R entry with a 'A'. In both cases there are no flags involved
-							#maybe the dist has changed?
-                            # case 6, pos 1156, again from merging an R entry with a 'A'.
-                            # case 6, pos 259, merging an A (0) entry with an C (1) entry
-                            #raise Exception("exit")
                     node.probVectTotUp=newVect
                     # if node.dist>=2*minBLenForMidNode:
                     # 	createFurtherMidNodes(node,vectUp,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
@@ -6110,6 +6034,10 @@ def reCalculateWithErrors(root,mutMatrix, errorRate=errorRate, checkExistingAreC
 
 
 def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,useRateVariation=False,mutMatrices=None, node2isleaf=False):
+    """
+    The errorrate version of 'estimateBranchLengthWithDerivative',
+    :param node2isleaf: True if probVectC is from a leaf node.
+    """
     c1=0.0
     ais=[]
     indexEntry1, indexEntry2, pos = 0, 0, 0
@@ -6211,18 +6139,18 @@ def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,us
                         if flag1 or flag2:
                             c1up = entry1[2]
                             pi2pi1 = rootFreqs[i2]/rootFreqs[i1] #approximation 3
-                            if APPROX1 or APPROX2:
-                                coeff0 = (errorRate * flag2 / 3 + mutMatrix[i1][i2] * contribLength * \
-                                          (1 + mutMatrix[i1][i1] * c1up - errorRate * flag1)) + \
-                                         pi2pi1 * (mutMatrix[i2][i1] * c1up + errorRate * flag1 / 3) * \
-                                         (1 + mutMatrix[i2][i2] * contribLength - errorRate * flag2)
-
-                                coeff1 = mutMatrix[i1][i2] * (1 + mutMatrix[i1][i1] * c1up - errorRate * flag1) + \
-                                         pi2pi1 * (mutMatrix[i2][i1] * c1up + errorRate * flag1 / 3) * mutMatrix[i2][i2]
-                            else: #final approximation!
-                                coeff0 = contribLength + (errorRate / 3 * flag2 + pi2pi1 * (
-                                            mutMatrix[i2][i1] * c1up + errorRate / 3 * flag1)) / mutMatrix[i1][i2]
-                                coeff1 = 1
+                            # if APPROX1 or APPROX2:
+                            #     coeff0 = (errorRate * flag2 / 3 + mutMatrix[i1][i2] * contribLength * \
+                            #               (1 + mutMatrix[i1][i1] * c1up - errorRate * flag1)) + \
+                            #              pi2pi1 * (mutMatrix[i2][i1] * c1up + errorRate * flag1 / 3) * \
+                            #              (1 + mutMatrix[i2][i2] * contribLength - errorRate * flag2)
+                            #
+                            #     coeff1 = mutMatrix[i1][i2] * (1 + mutMatrix[i1][i1] * c1up - errorRate * flag1) + \
+                            #              pi2pi1 * (mutMatrix[i2][i1] * c1up + errorRate * flag1 / 3) * mutMatrix[i2][i2]
+                            # else: #final approximation!
+                            coeff0 = contribLength + (errorRate / 3 * flag2 + pi2pi1 * (
+                                        mutMatrix[i2][i1] * c1up + errorRate / 3 * flag1)) / mutMatrix[i1][i2]
+                            coeff1 = 1
                         else:
                             if contribLength:
                                 coeff0=rootFreqs[i1]*mutMatrix[i1][i2]*contribLength\
@@ -6268,8 +6196,8 @@ def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,us
                     for i in range4:
                         coeff1 += entry1[-1][i] * mutMatrix[i][i2]
                     if flag2: #include error rate if flag2
-                        if coeff1 <0:# and errorRate/entry1[-1][i2] <0.01: todo
-                            #second if statment that only does this approximation if the other terms are small todo
+                        if coeff1 <0:# and errorRate/entry1[-1][i2] <0.01:
+                            #second if statment that only does this approximation if the other terms are small
                             coeff0 = entry1[-1][i2]
                             if contribLength:
                                 coeff0 += coeff1 * contribLength  #REMOVE: I temperorarly added this: otherwise not be the same as the normal function for cases where error rate =0
@@ -6306,17 +6234,17 @@ def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,us
                             if flag1 or flag2: #although the calculation is the same, I added 'if errorRate' for testing purposes, because the last decimal is a bit different.
                                 c1up = entry1[2]
                                 pi2pi1 = rootFreqs[i2] / rootFreqs[i1]
-                                if APPROX1 or APPROX2:
-                                    coeff0 = (errorRate * flag2 / 3 + mutMatrix[i1][i2] * contribLength * \
-                                              (1 + mutMatrix[i1][i1] * c1up - errorRate * flag1)) + \
-                                             pi2pi1 * (mutMatrix[i2][i1] * c1up + errorRate * flag1 / 3) * \
-                                             (1 + mutMatrix[i2][i2] * contribLength - errorRate * flag2)
-
-                                    coeff1 = mutMatrix[i1][i2] * (1 + mutMatrix[i1][i1] * c1up - errorRate * flag1) + \
-                                             pi2pi1 * (mutMatrix[i2][i1] * c1up + errorRate * flag1 / 3) * mutMatrix[i2][i2]
-                                else:
-                                    coeff0 = contribLength + (errorRate/3*flag2 + pi2pi1*(mutMatrix[i2][i1]*c1up + errorRate/3*flag1))/mutMatrix[i1][i2]
-                                    coeff1 = 1
+                                # if APPROX1 or APPROX2:
+                                #     coeff0 = (errorRate * flag2 / 3 + mutMatrix[i1][i2] * contribLength * \
+                                #               (1 + mutMatrix[i1][i1] * c1up - errorRate * flag1)) + \
+                                #              pi2pi1 * (mutMatrix[i2][i1] * c1up + errorRate * flag1 / 3) * \
+                                #              (1 + mutMatrix[i2][i2] * contribLength - errorRate * flag2)
+                                #
+                                #     coeff1 = mutMatrix[i1][i2] * (1 + mutMatrix[i1][i1] * c1up - errorRate * flag1) + \
+                                #              pi2pi1 * (mutMatrix[i2][i1] * c1up + errorRate * flag1 / 3) * mutMatrix[i2][i2]
+                                # else: #final approximation
+                                coeff0 = contribLength + (errorRate/3*flag2 + pi2pi1*(mutMatrix[i2][i1]*c1up + errorRate/3*flag1))/mutMatrix[i1][i2]
+                                coeff1 = 1
                             else:
                                 if contribLength:
                                     coeff0=rootFreqs[i1]*mutMatrix[i1][i2]*contribLength+rootFreqs[i2]*mutMatrix[i2][i1]*entry1[2]
@@ -6385,18 +6313,15 @@ def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,us
     n=len(ais)
     if n==0:
         return False
-    else:# TODO below equations should change if ais can become negative.
-        # #ais = [0 if x < 0 else x for x in ais] #remove this
-        # print(ais)
-        # print(c1)
-        assert(min(ais)>=0)
+    else:
+        assert(min(ais)>=0) #with the current approximation, all a values in 'ais' should remain positive.
         tDown = n / c1 - min(ais)
         if tDown <= 0.0:
             return 0.0
         vDown=calculateDerivative(ais,tDown)
         tUp=n/c1-max(ais)
         if tUp<0.0:
-            if min(ais)>0: #Error rate, I changed if min(ais): to if min(ais)>0: if min(ais) <0  and there are other items in ais that are 0, there will be a division by 0 error later on.
+            if min(ais):
                 tUp=0.0
             else:
                 tUp=minBLenSensitivity
@@ -6417,7 +6342,6 @@ def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,us
     while tDown-tUp>minBLenSensitivity:
         tMiddle=(tUp+tDown)/2
         vMiddle=calculateDerivative(ais,tMiddle)
-        #print(tUp,tMiddle,tDown,vMiddle,c1)
         if vMiddle>c1:
             tUp=tMiddle
         else:
@@ -6427,6 +6351,10 @@ def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,us
 
 #for the root, take lower likelihood genome list probVect, and create an overall likelihood (or upper right or upper left) genome list by multiplying likelihoods by root frequencies.
 def rootVectorErrorRate(probVect,bLen,mutMatrix,useRateVariation=False,mutMatrices=None, isLeaf=False):
+    """
+    The errorrate version of 'rootVector',
+    :param isLeaf: True if ProbVect is from a leaf node.
+    """
     newProbVect=[]
     for entry in probVect:
         if entry[0]==5: #==N
@@ -6473,10 +6401,62 @@ def rootVectorErrorRate(probVect,bLen,mutMatrix,useRateVariation=False,mutMatric
                     newProbVect.append((entry[0],entry[1]))
     return newProbVect
 
+def areVectorsDifferentErrorRate(probVect1,probVect2):
+    """
+    The errorrate function of 'areVectorsDifferent',
+    """
+    #should both have flags
+    if probVect2==None:
+        return True
+    indexEntry1, indexEntry2, pos = 0, 0, 0
+    entry1=probVect1[indexEntry1]
+    entry2=probVect2[indexEntry2]
+    while True:
+        if entry1[0]!=entry2[0]:
+            return True
+        if len(entry1)!=len(entry2):
+            return True
+        if entry1[0]<5:
+            if len(entry1)>2:
+                assert(len(entry1)!=3)
+                if abs(entry1[2] - entry2[2])>thresholdProb: #first bLen element
+                     return True
+                if len(entry1)==5: #==5 instead of ==4
+                    if abs(entry1[3] - entry2[3])>thresholdProb: #2nd blen element
+                        return True
+                if entry1[-1] != entry2[-1]: #error rate flags
+                    return True
+        if entry1[0]==6:
+            if len(entry1)==4:
+                if abs(entry1[2] - entry2[2])>thresholdProb:
+                    return True
+            for i in range4:
+                diffVal=abs(entry1[-1][i] - entry2[-1][i])
+
+                if diffVal:
+                    if (not entry1[-1][i]) or (not entry2[-1][i]):
+                        return True
+                    if diffVal>thresholdDiffForUpdate or (diffVal>thresholdProb and ( (diffVal/entry1[-1][i]>thresholdFoldChangeUpdate)  or  (diffVal/entry2[-1][i]>thresholdFoldChangeUpdate))):
+                        return True
+        #update pos, end, etc
+        pos=min(entry1[1],entry2[1])
+        if pos==lRef:
+            break
+        if pos==entry1[1]:
+            indexEntry1+=1
+            entry1=probVect1[indexEntry1]
+        if pos==entry2[1]:
+            indexEntry2+=1
+            entry2=probVect2[indexEntry2]
+    return False
 
 def traverseTopology(node, function, leafsOnly=False):
-    #and perform a function at leaf nodes.
-    print('start traversal')
+    """
+    Traverse a topology and perform a function
+    :param node: the root node.
+    :param function: the function to be performed at every node. It should take only 'node' as argument
+    :param leafsOnly: If True, the function will only be performed at the leaf node
+    """
     nodesToVisit=[node]
     while nodesToVisit:
         newNode=nodesToVisit.pop()
@@ -6507,6 +6487,9 @@ def countEntriesAll(root):
     print("Ns per node: "+str(float(numNodes[3])/numNodes[0]))
 
 def counttotBLenAll(root):
+    """
+    Traverse the tree to count the sum of all the branch lengths.
+    """
     global totBLen
     totBLen = 0
     def counttotBLen(node):
@@ -6517,6 +6500,9 @@ def counttotBLenAll(root):
     return totBLen
 
 def countFlagsAll(root):
+    """
+    Traverse the tree to count the number of actually stored flags, and how many are set to true.
+    """
     global totFlags
     totFlags = 0
     global totFlagsTrue
@@ -6547,8 +6533,14 @@ def countFlagsAll(root):
     return totFlags
 
 def traverseTwoTopologies(node1, node2):
-    # traverse and estimate branch lengths for both t0_1 and t1
-    #print('start 2 topology traversal')
+    """
+    To aid testing if error rate functions are correct.
+    Traverse two topologies, one with flags, one without flags,
+    and test if the results of the error rate functions are the same as the normal MAPLE functions
+    :param node1: t1, the tree with the error rates and flags
+    :param node2: t0_1, the tree without flags
+    :return:
+    """
     nodesToVisit=[node1]
     traversalList1 = [node1]
     while nodesToVisit:
@@ -6605,24 +6597,23 @@ def traverseTwoTopologies(node1, node2):
                         print(round(appendProbNodeErrorRate(upVect1, node1.children[1].probVect, node1.children[1].dist, mutMatrix),7))
                         print(round(appendProbNodeOriginal(upVect2, node2.children[1].probVect, node2.children[1].dist,mutMatrix),7))  # , useRateVariation=True, mutMatrices=mutMatrices)
 
-    #print('end 2 topology traversal')
-    # dist to S3 has changed
-    # error rate function: to 0.17 from 0.15 in the errortree only
-    # New branch length
-    # -6.518333660706276 0.00815601569964858 -7.5855466998133885 0.17896066445828276
-    # no error rate function: c1=12.142823816750477, ais=[0.218923109996965, 0.11134438049557914]
-    # New branch length
-    # -4.9991112319809545 0.00815601569964858 -5.042645736113252 0.015582698564789891
-    # also the appendprobnode function is different in both cases - maybe because the upvect is different?
+
 
 totalEntries = 0
 def countNumEntries(node):
     global totalEntries
     totalEntries += len(node.probVect)
 
-
 def overallLeaf(node):
-    "To aid error correction"
+    """
+    This function should aid error detection and correction.
+    It calculates the overall likelihood of each leaf node its upper likelihood vector and the lower vector, in which the error rates are taken into account.
+    The function mergeVectorsUpDownErrorDetection The vectup will be transfered down over the branch length leading up the node. This is     #Similar to what is normally calculated for ProbVectTotUp of leaf nodes.
+
+    After calculating the Overall likelihood, the function loops over the overall and lower likelihood simulteanously, to see what was observed at the position.
+    It subsequently  prints out the posterior error probabilities for each position or fragment.
+    """
+    # if a flagged entry is at an inner node, one can calculate error probabilities, but most then transfer it to the leaf node from which this arrived.
     global mutMatrices, useRateVariation
     if node.up:
         print(node)
@@ -6630,32 +6621,17 @@ def overallLeaf(node):
             vectUp = node.up.probVectUpRight
         else:
             vectUp = node.up.probVectUpLeft
-
-
-
-        # adapt a version of mergeVectorsUpDown to check in what cases the result of the merged vectors is different from node.Probvect:
-        # if node.Probvect[i][0] != result[i][0]  -->
-        # if result[i][0] == O : count += 1 - max(result[i][-1])
-        # else: count +=1
-        # multiply with length of sequence considered
-        # divide by total sequence length.
-        node.probVectTotUp = mergeVectorsUpDownErrorDetection(vectUp, node.dist, node.probVect, 0, mutMatrix, node2isleaf=True,
-                                                mutMatrices=None, useRateVariation=False)
-        print(node.probVectTotUp)
-        # useRateVariation=useRateVariation, mutMatrices=mutMatrices)
+        node.overall = mergeVectorsUpDownErrorDetection(vectUp, node.dist, node.probVect, 0, mutMatrix, node2isleaf=True, mutMatrices=None, useRateVariation=False)
+        print(node.overall)
         print(" ".join([["A", "C", "G", "T", "R", "N", "O"][x[0]] + str(x[1]) for x in node.probVect]))
         print(" ".join([["A", "C", "G", "T", "R", "N", "O"][x[0]] + str(x[1]) for x in vectUp]))
-        print(" ".join([["A", "C", "G", "T", "R", "N", "O"][x[0]] + str(x[1]) for x in node.probVectTotUp]))
-        # for m in range(len(node.minorSequences)):
-        #     node.minorSequences[m] = "S" + str(node.minorSequences[m])
-        if not node.children:
-            #loop over overall and lower likelihood.
+        print(" ".join([["A", "C", "G", "T", "R", "N", "O"][x[0]] + str(x[1]) for x in node.overall]))
+        if not node.children: #loop over overall and lower likelihood, to see what was observed at the position.
             indexEntry1, indexEntry2, pos = 0, 0, 0
             errorProbs = []
-            entry1 = node.probVectTotUp[indexEntry1]
+            entry1 = node.overall[indexEntry1]
             entry2 = node.probVect[indexEntry2]
             while True:
-                #flag1, flag2 = getFlag(entry1, isLeaf=False), getFlag(entry2, isLeaf=node2isleaf)
                 if entry2[0] < 5 and (entry1[0] == 6 or (entry1[0] <5 and entry1[0]!=entry2[0])):
                     if entry2[0] == 4:
                         i2 = refIndeces[pos]
@@ -6672,20 +6648,19 @@ def overallLeaf(node):
                     break
                 if pos == entry1[1]:
                     indexEntry1 += 1
-                    entry1 = node.probVectTotUp[indexEntry1]
+                    entry1 = node.overall[indexEntry1]
                 if pos == entry2[1]:
                     indexEntry2 += 1
                     entry2 = node.probVect[indexEntry2]
             node.errorProbs = errorProbs
             print(errorProbs)
-        # if a flagged entry is at an inner node, one can calculate error probabilities, but most then transfer it to the leaf node from which this arrived.
 
 
 def activateErrorFunctions(activate=True, activatefirsttime=False):
-    global estimateBranchLengthWithDerivativeOriginal, mergeVectorsUpDownOriginal, mergeVectorsOriginal, rootVectorOriginal, appendProbNodeOriginal, findProbRootOriginal, reCalculateAllGenomeListsOriginal
-    global estimateBranchLengthWithDerivative, mergeVectorsUpDown, mergeVectors, rootVector, appendProbNode, findProbRoot, reCalculateAllGenomeLists
-
-    import copy
+    "#replace normal functions with pointers to their error rate variants. "
+    global areVectorsDifferentOriginal, estimateBranchLengthWithDerivativeOriginal, mergeVectorsUpDownOriginal, mergeVectorsOriginal, rootVectorOriginal, appendProbNodeOriginal, findProbRootOriginal, reCalculateAllGenomeListsOriginal
+    global estimateBranchLengthWithDerivative, areVectorsDifferent, mergeVectorsUpDown, mergeVectors, rootVector, appendProbNode, findProbRoot, reCalculateAllGenomeLists
+    import copy #todo check if this works without copying.
     if activate:
         if activatefirsttime:
             estimateBranchLengthWithDerivativeOriginal = copy.deepcopy(estimateBranchLengthWithDerivative)
@@ -6695,7 +6670,9 @@ def activateErrorFunctions(activate=True, activatefirsttime=False):
             appendProbNodeOriginal = copy.deepcopy(appendProbNode)
             findProbRootOriginal = copy.deepcopy(findProbRoot)
             reCalculateAllGenomeListsOriginal = copy.deepcopy(reCalculateAllGenomeLists)
+            areVectorsDifferentOriginal = copy.deepcopy(areVectorsDifferent)
             #
+        areVectorsDifferent = areVectorsDifferentErrorRate
         estimateBranchLengthWithDerivative = errorRateEstimateBranchLengthWithDerivative
         mergeVectors = mergeVectorsError
         mergeVectorsUpDown = mergeVectorsUpDownError
@@ -6712,197 +6689,17 @@ def activateErrorFunctions(activate=True, activatefirsttime=False):
         appendProbNode = appendProbNodeOriginal
         findProbRoot = findProbRootOriginal
         reCalculateAllGenomeLists =reCalculateAllGenomeListsOriginal
+        areVectorsDifferent = areVectorsDifferentOriginal
 
-#---------------------------------- testing functions seperately
-activateErrorFunctions(activate=True,activatefirsttime=True)
-#--------------------------------------------------------------
-
-# following 2vectors should cover all
-vect1WithFlags = [(4, 8, 0.0007, True), (4, 9), (5, 10), (4,11,0.000, True), (4, 12, 0.0004, True), (6, 13, [0.8, 0.2, 0, 0]), (6, 14, [0.8, 0.2, 0, 0]), (4, 1481)]
-vect2WithFlags = [(4,7), (2, 8), (4, 9, 0.0008, True), (4, 10, 0.0004, True), (5, 11), (6, 12, [0.8, 0.2, 0, 0]), (0, 13, 0.00071, True), (6, 14, [0.8, 0.2, 0, 0]), (4, 1481)]
-vect1WithoutFlags = [(4, 8, 0.0007), (4, 9), (5, 10), (4,11), (4, 12, 0.0004), (6, 13, [0.8, 0.2, 0, 0]), (6, 14, [0.8, 0.2, 0, 0]), (4, 1481)]
-vect2WithoutFlags = [(4,7), (2, 8), (4, 9, 0.0008), (4, 10, 0.0004), (5,11), (6, 12, [0.8, 0.2, 0, 0]), (0, 13, 0.00071), (6, 14, [0.8, 0.2, 0, 0]), (4, 1481)]
-
-bLen1 = 0.0001
-bLen2 = 0.0002
-
-errorRate=0
-resWith = mergeVectorsError(vect1WithFlags, bLen1, vect2WithFlags, bLen2, mutMatrix, returnLK=True, useRateVariation=rateVariation,
-                 mutMatrices=mutMatrices, node1isleaf=False, node2isleaf=False)
-resWithout = mergeVectorsOriginal(vect1WithoutFlags, bLen1, vect2WithoutFlags, bLen2, mutMatrix, returnLK=True, useRateVariation=rateVariation,
-                 mutMatrices=mutMatrices, node1isleaf=False, node2isleaf=False)
-print(areVectorsDifferentDebugging(resWith[0], resWithout[0])) #should be false
-print(resWith)
-print(resWithout)
-errorRate=0.05
-resWith = mergeVectorsError(vect1WithFlags, bLen1, vect2WithFlags, bLen2, mutMatrix, returnLK=True, useRateVariation=rateVariation,
-                 mutMatrices=mutMatrices, node1isleaf=False, node2isleaf=False)
-resWithout = mergeVectorsOriginal(vect1WithoutFlags, bLen1, vect2WithoutFlags, bLen2, mutMatrix, returnLK=True, useRateVariation=rateVariation,
-                 mutMatrices=mutMatrices, node1isleaf=False, node2isleaf=False)
-print(areVectorsDifferentDebugging(resWith[0], resWithout[0])) #should be true
-print(resWith)
-print(resWithout)
-#-----------------------------
-
-vect1WithFlags = [(4, 8, 0.0007, 0.0007, True), (4, 9), (5, 10), (4,11,0.0007,0.0007, True), (2, 12, 0.0004, 0.0007, True), (6, 13, [0.8, 0.2, 0, 0]), (6, 14, [0.8, 0.2, 0, 0]), (4, 1481)]
-vect2WithFlags = [(4,7), (2, 8), (4, 9, 0.0008, True), (4, 10, 0.0004, True), (5, 11), (6, 12, [0.8, 0.2, 0, 0]), (0, 13, 0.00071, True), (6, 14, [0.8, 0.2, 0, 0]), (4, 1481)]
-vect1WithoutFlags = [(4, 8, 0.0007,0.0007), (4, 9), (5, 10), (4,11,0.0007,0.0007), (2, 12, 0.0004,0.0007), (6, 13, [0.8, 0.2, 0, 0]), (6, 14, [0.8, 0.2, 0, 0]), (4, 1481)]
-vect2WithoutFlags = [(4,7), (2, 8), (4, 9, 0.0008), (4, 10, 0.0004), (5,11), (6, 12, [0.8, 0.2, 0, 0]), (0, 13, 0.00071), (6, 14, [0.8, 0.2, 0, 0]), (4, 1481)]
-errorRate=0
-resWith = mergeVectorsUpDownError(vect1WithFlags, bLen1, vect2WithFlags, bLen2, mutMatrix,  useRateVariation=False,
-                 mutMatrices=None, node1isleaf=False, node2isleaf=False)
-resWithout = mergeVectorsUpDownOriginal(vect1WithoutFlags, bLen1, vect2WithoutFlags, bLen2, mutMatrix, useRateVariation=False,
-                 mutMatrices=None, node1isleaf=False, node2isleaf=False)
-print(areVectorsDifferentDebugging(resWith, resWithout)) #should be false
-print(resWith)
-print(resWithout)
-errorRate=0.05
-resWith = mergeVectorsUpDownError(vect1WithFlags, bLen1, vect2WithFlags, bLen2, mutMatrix, useRateVariation=False,
-                 mutMatrices=None, node1isleaf=False, node2isleaf=False)
-resWithout = mergeVectorsUpDownOriginal(vect1WithoutFlags, bLen1, vect2WithoutFlags, bLen2, mutMatrix, useRateVariation=False,
-                 mutMatrices=None, node1isleaf=False, node2isleaf=False)
-print(areVectorsDifferentDebugging(resWith, resWithout)) #should be true
-print(resWith)
-print(resWithout)
-#----------------
-'APPEND PROB NODE'
-errorRate=0
-resWith = appendProbNodeErrorRate(vect1WithFlags, vect2WithFlags, bLen1,  mutMatrix,  useRateVariation=False, mutMatrices=None, node2isleaf=False)
-resWithout = appendProbNodeOriginal(vect1WithoutFlags, vect2WithoutFlags, bLen1, mutMatrix,  useRateVariation=False, mutMatrices=None, node2isleaf=False)
-print((resWith== resWithout)) #should be false
-print(resWith)
-print(resWithout)
-errorRate=0.05
-resWith = appendProbNodeErrorRate(vect1WithFlags, vect2WithFlags, bLen1, mutMatrix,  useRateVariation=False, mutMatrices=None, node2isleaf=False)
-resWithout = appendProbNodeOriginal(vect1WithoutFlags, vect2WithoutFlags, bLen1, mutMatrix,  useRateVariation=False, mutMatrices=None, node2isleaf=False)
-print((resWith== resWithout)) #should be false
-#results are the same - why? (0.005110222178619064, 0.004337430829492247, 0.24367333954409753)
-print(resWith) # is -8, whereas without error rate it is -18. In some cases in appendprobnode the LKcost would get more negative (eg. A-->A), but for
-#other cases it can get either more negative or more positive.
-print(resWithout)
-#----------------
-'FIND ROOT PROB'
-errorRate=0
-print(findProbRootError(vect1WithFlags))
-print(findProbRootOriginal(vect1WithoutFlags))
-print(findProbRootError(vect1WithFlags) == findProbRootOriginal(vect1WithoutFlags))
-errorRate=0.05
-print(findProbRootError(vect1WithFlags)) # gets a bit lower, which is what should happen
-print(findProbRootOriginal(vect1WithoutFlags))
-#----------------
-'ESTIMATE BlEN'
-errorRate=0
-resWith =errorRateEstimateBranchLengthWithDerivative(vect1WithFlags, vect2WithFlags, mutMatrix)
-resWithout = estimateBranchLengthWithDerivativeOriginal(vect1WithoutFlags, vect2WithoutFlags, mutMatrix)
-print((resWith== resWithout)) #should be true
-print(resWith)
-print(resWithout)
-errorRate=0.0005
-resWith =errorRateEstimateBranchLengthWithDerivative(vect1WithFlags, vect2WithFlags, mutMatrix) #branch length becomes 0. if you let the error rate approach 0, it becomes similar to the previous value (with normal MAPLE functions)
-resWithout = estimateBranchLengthWithDerivativeOriginal(vect1WithoutFlags, vect2WithoutFlags, mutMatrix)
-print((resWith==resWithout)) #should be false
-print(resWith)
-print(resWithout)
-
-
-vect2WithFlags = [(5, 5), (4, 8), (2, 9), (4, 945), (6, 946, [2.9754581065168545e-13, 0.9999990762239054, 2.899054813462519e-16, 9.237757967939945e-07]), (4, 1122), (6, 1123, [1.2048219778560687e-13, 3.4972858641174724e-06, 3.603821044511927e-15, 0.9999965027140117]), (4, 1413), (5, 1414), (4, 1443), (4, 1444, 0.0055191203096563776, False), (5, 1445), (4, 1454), (5, 1455), (4, 1467), (5, 1481)]
-vect2WithoutFlags = [(5, 5), (4, 8), (2, 9), (4, 945), (6, 946, [2.9754581065168545e-13, 0.9999990762239054, 2.899054813462519e-16, 9.237757967939945e-07]), (4, 1122), (6, 1123, [1.2048219778560687e-13, 3.4972858641174724e-06, 3.603821044511927e-15, 0.9999965027140117]), (4, 1413), (5, 1414), (4, 1443), (4, 1444, 0.0055191203096563776), (5, 1445), (4, 1454), (5, 1455), (4, 1467), (5, 1481)]
-vect1WithFlags =[(5, 25), (4, 1083, 5.055016065236067e-07, 0.0, True), (3, 1084, 5.055016065236067e-07, 0.0, True), (4, 1413, 5.055016065236067e-07, 0.0, True), (5, 1414), (4, 1436, 5.055016065236067e-07, 0.0, True), (5, 1481)]
-vect1WithoutFlags =[(5, 25), (4, 1083, 5.055016065236067e-07, 0.0), (3, 1084, 5.055016065236067e-07, 0.0), (4, 1413, 5.055016065236067e-07, 0.0), (5, 1414), (4, 1436, 5.055016065236067e-07, 0.0), (5, 1481)]
-errorRate=0
-resWith =errorRateEstimateBranchLengthWithDerivative(vect1WithFlags, vect2WithFlags, mutMatrix)
-resWithout = estimateBranchLengthWithDerivativeOriginal(vect1WithoutFlags, vect2WithoutFlags, mutMatrix)
-resWith =errorRateEstimateBranchLengthWithDerivative(vect1WithFlags, vect2WithFlags, mutMatrix)
-
-print((resWith== resWithout)) #should be true
-print(resWith)
-print(resWithout)
-errorRate=0.0005
-resWith =errorRateEstimateBranchLengthWithDerivative(vect1WithFlags, vect2WithFlags, mutMatrix) #branch length becomes 0. if you let the error rate approach 0, it becomes similar to the previous value (with normal MAPLE functions)
-resWithout = estimateBranchLengthWithDerivativeOriginal(vect1WithoutFlags, vect2WithoutFlags, mutMatrix)
-print((resWith==resWithout)) #should be false
-print(resWith)
-print(resWithout)
-
-#---------------
-
-vect2WithoutFlags = [(5, 25), (4, 1083), (3, 1084), (4, 1413), (5, 1414), (4, 1436), (5, 1481)]
-vect2WithFlags = vect2WithoutFlags
-vect1WithFlags = [(5, 5), (4, 8, 0.0007112327864252331, 0.0, False), (2, 9, 0.0007112327864252331, 0.0, False), (4, 945, 0.0007112327864252331, 0.0, False), (6, 946, [0.00018386197763338815, 0.9989795877350927, 1.516124784132128e-05, 0.0008213890394325605]), (4, 1122, 0.0007112327864252331, 0.0, False), (6, 1123, [7.08674650514798e-05, 0.0005874520216743095, 3.2378409262364464e-05, 0.9993093021040118]), (4, 1413, 0.0007112327864252331, 0.0, False), (5, 1414), (4, 1443, 0.0007112327864252331, 0.0, False), (4, 1444, 0.006230353096081611, 0.0, False), (5, 1445), (4, 1454, 0.0007112327864252331, 0.0, False), (5, 1455), (4, 1467, 0.0007112327864252331, 0.0, False), (5, 1481)]
-vect1WithoutFlags = [(5, 5), (4, 8, 0.0007112327864252331, 0.0), (2, 9, 0.0007112327864252331, 0.0), (4, 945, 0.0007112327864252331, 0.0), (6, 946, [0.00018386197763338815, 0.9989795877350927, 1.516124784132128e-05, 0.0008213890394325605]), (4, 1122, 0.0007112327864252331, 0.0), (6, 1123, [7.08674650514798e-05, 0.0005874520216743095, 3.2378409262364464e-05, 0.9993093021040118]), (4, 1413, 0.0007112327864252331, 0.0), (5, 1414), (4, 1443, 0.0007112327864252331, 0.0), (4, 1444, 0.006230353096081611, 0.0), (5, 1445), (4, 1454, 0.0007112327864252331, 0.0), (5, 1455), (4, 1467, 0.0007112327864252331, 0.0), (5, 1481)]
-errorRate=0
-resWithout = estimateBranchLengthWithDerivativeOriginal(vect1WithoutFlags, vect2WithoutFlags, mutMatrix)
-resWith =errorRateEstimateBranchLengthWithDerivative(vect1WithFlags, vect2WithFlags, mutMatrix, node2isleaf=True)
-resWith =errorRateEstimateBranchLengthWithDerivative(vect1WithFlags, vect2WithFlags, mutMatrix, node2isleaf=True)
-
-print((resWith== resWithout)) #should be true
-print(resWith)
-print(resWithout)
-errorRate=0.0005
-resWith =errorRateEstimateBranchLengthWithDerivative(vect1WithFlags, vect2WithFlags, mutMatrix, node2isleaf=True) #branch length becomes 0. if you let the error rate approach 0, it becomes similar to the previous value (with normal MAPLE functions)
-resWithout = estimateBranchLengthWithDerivativeOriginal(vect1WithoutFlags, vect2WithoutFlags, mutMatrix)
-print((resWith==resWithout)) #should be false
-print(resWith)
-print(resWithout)
-#---------------------------------------------------------------
-
-#     test on worse branch length
-# reCalculateAllGenomeLists(t1,mutMatrix)
-# traverseTreeToOptimizeBranchLengths(t1,mutMatrix,testing=True,useRateVariation=rateVariation,mutMatrices=mutMatrices)
-# reCalculateAllGenomeLists(t1, mutMatrix)
-# traverseTreeToOptimizeBranchLengths(t1, mutMatrix, testing=True, useRateVariation=rateVariation,
-#                                     mutMatrices=mutMatrices)
-
-#QUESTION: in example, MAPLE_input_example.txt, the first sample seems to be not included in the tree.
 errorRate = args.errorRate
 if errorRate:
+    activateErrorFunctions(activate=True, activatefirsttime=True) #replace normal functions with pointers to their error rate variants.
+    if debugging: print("start recalculating with ErrorRate")
+    errorRate=0.0005
+    reCalculateWithErrors(t1, mutMatrix, errorRate,useRateVariation=rateVariation,mutMatrices=mutMatrices,firstTimeError=True)
+    if debugging: print("ErrorRate included")
 
-    import copy
-    activateErrorFunctions(activate=False)
-    t0 = copy.deepcopy(t1)
-    reCalculateAllGenomeLists(t1,mutMatrix)
-    traverseTreeToOptimizeBranchLengths(t1,mutMatrix,testing=False,useRateVariation=rateVariation,mutMatrices=mutMatrices)
-    countEntriesAll(t1)
-    oldTotBLen = counttotBLenAll(t1)
-    t0_1 = copy.deepcopy(t1)
-    oldTotBLen = counttotBLenAll(t0_1)
-    reCalculateAllGenomeLists(t0_1, mutMatrix,useRateVariation=rateVariation,mutMatrices=mutMatrices,)
-    activateErrorFunctions(activate=True)
-
-    # ----------testing if functions with error rate = 0
-    errorRate = 0
-    reCalculateWithErrors(t1,mutMatrix, errorRate,useRateVariation=rateVariation,mutMatrices=mutMatrices,)
-    traverseTwoTopologies(t1,t0_1) # mergeVectors and reCalculateAllGenomeLists seem to work.
-    #activateErrorFunctions(activate=True)
-    activateErrorFunctions(activate=False)
-    print("//////////////////////////////////")
-    improvement, best_lengths_t0 = traverseTreeToOptimizeBranchLengths(t0_1,mutMatrix,testing=True,useRateVariation=rateVariation,mutMatrices=mutMatrices)
-    activateErrorFunctions(activate=True)
-    test_if_different=True
-    improvement, best_lengths_t1 = traverseTreeToOptimizeBranchLengths(t1,mutMatrix,testing=True,useRateVariation=rateVariation,mutMatrices=mutMatrices) # Initial border parameters don't fit expectations
-    traverseTwoTopologies(t1,t0_1)
-    test_if_different = False
-
-    # ------------------------------
-    # activateErrorFunctions(activate=True)
-    # print("start recalculating with ErrorRate")
-    # errorRate=0.0005
-    # reCalculateWithErrors(t1, mutMatrix, errorRate,useRateVariation=rateVariation,mutMatrices=mutMatrices,)
-    # print("ErrorRate included")
-    # countEntriesAll(t1) #checking if node compositions remain the same. .. Difficult to conlcude anything based on this, since node.dist is often False.
-    # traverseTreeToOptimizeBranchLengths(t1,mutMatrix,testing=False,useRateVariation=rateVariation,mutMatrices=mutMatrices)
-    # newTotBLen = counttotBLenAll(t1)
-    # print('diff tot blen '+ str(newTotBLen - oldTotBLen))
-    # print( 'expected dif = errorRate*nsamples/subtitutionrate ' + str(errorRate*178) )
-    # countFlagsAll(t1)
-    print('x')
-    #traverseTopology(t1, overallLeaf, leafsOnly=False)
-
-
-# End error rate functions
-
-
-# ----------------------------------------------------------
+# End error rate functions ----------------------------------------------------------
 
 
 #if asked, first run a round of short range topology search
