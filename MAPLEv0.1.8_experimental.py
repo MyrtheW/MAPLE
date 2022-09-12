@@ -2202,6 +2202,7 @@ def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTop
                     continue
                 midProb=appendProbNode(midTot,removedPartials,removedBLen,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,
                                        node2isleaf=removedPartialsIsLeaf) # because removedPartials=node.children[child].probVect
+                #notably, this has an improved value for the first loop over NodesToVisit, using node.children[1-child].probVect
                 if midProb>bestLKdiff:
                     bestLKdiff=midProb
                     bestNode=t1
@@ -2261,14 +2262,15 @@ def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTop
                     else:
                         vectUp=t1.up.probVectUpLeft
                     midTot=mergeVectorsUpDown(vectUp,t1.dist/2,midBottom,t1.dist/2,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,
-                                              node2isleaf=False)
+                                              node2isleaf=False) #midBottom is not from a leaf node! it has just been created above.
                     if not areVectorsDifferent(midTot,t1.probVectTotUp):
                         needsUpdating=False
                 else:
                     midTot=t1.probVectTotUp
                 if midTot==None:
                     continue
-                midProb=appendProbNode(midTot,removedPartials,removedBLen,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
+                midProb=appendProbNode(midTot,removedPartials,removedBLen,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,
+                                       node2isleaf=removedPartialsIsLeaf)
                 if midProb>bestLKdiff:
                     bestLKdiff=midProb
                     bestNode=t1
@@ -2343,10 +2345,10 @@ def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTop
 
     #todo bestBranchLengths = (none,none,none) but bestCurrentLK has improved...
     bestBranchLengths=(None,None,None)
-    bestScore=bestLKdiff
+    bestScore= bestLKdiff #currentLK -1 #float('inf') #
     compensanteForBranchLengthChange=True
     secondBranchLengthOptimizationRound=False
-    for nodePair in bestNodes:
+    for nodePair in bestNodes: # it is strange that bestScore is not replaced in the following part?
         score=nodePair[1]
         if score>=bestLKdiff-thresholdLogLKtopology/factorOptimizePlacementLKvsSearchLK:
             t1=nodePair[0]
@@ -2374,7 +2376,7 @@ def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTop
             midTopVector=mergeVectorsUpDown(upVect,bestTopLength,removedPartials,bestAppendingLength,mutMatrix,
                                             node2isleaf=removedPartialsIsLeaf)
             bestBottomLength=estimateBranchLengthWithDerivative(midTopVector,downVect,mutMatrix,
-                                                                node2isleaf=False)
+                                                                node2isleaf=downVectIsLeaf)
             newMidVector=mergeVectorsUpDown(upVect,bestTopLength,downVect,bestBottomLength,mutMatrix,
                                             node2isleaf=downVectIsLeaf)
             if secondBranchLengthOptimizationRound: #if wanted, do a second round of branch length optimization
@@ -3711,6 +3713,7 @@ def traverseTreeForTopologyUpdate(node,mutMatrix,strictTopologyStopRules=strictT
             child=1
             vectUp=parentNode.probVectUpLeft
         #score of current tree
+        bestOriginalBLen=node.dist #remove
         bestCurrenBLen=node.dist
         originalLK=appendProbNode(vectUp,node.probVect,bestCurrenBLen,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
         bestCurrentLK=originalLK
@@ -6850,7 +6853,7 @@ if not debugging and inputTree=="":
     while nextLeaves:
         node=nextLeaves.pop()
         if not node.children:
-            name=sampleNames[node.name]
+            name=sampleNames[node.name[1:]] #strip the 'S'off here.
             sampleNames[node.name]=None
             node.name=name
             for m in range(len(node.minorSequences)):
