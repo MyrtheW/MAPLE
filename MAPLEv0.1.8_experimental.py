@@ -2155,7 +2155,7 @@ def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTop
     bestNodes=[]
     nodesToVisit=[]
     removedPartials=node.children[child].probVect
-    removedPartialsIsLeaf = node.children[child].children==[]
+    removedPartialsIsLeaf = (node.children[child].children==[])
     if node.up!=None:
         if node.up.children[0]==node:
             childUp=1
@@ -2179,10 +2179,10 @@ def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTop
             child2=node.children[1-child].children[1]
             vectUp1=rootVector(child2.probVect,child2.dist,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,
                                isLeaf=child2.children==[])
-            nodesToVisit.append((child1,0,vectUp1,child1.dist,True,bestLKdiff,0, False))
+            nodesToVisit.append((child1,0,vectUp1,child1.dist,True,bestLKdiff,0, False)) #isLeaf is false for vectup1
             vectUp2=rootVector(child1.probVect,child1.dist,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,
                                isLeaf=child1.children==[])
-            nodesToVisit.append((child2,0,vectUp2,child2.dist,True,bestLKdiff,0, False))
+            nodesToVisit.append((child2,0,vectUp2,child2.dist,True,bestLKdiff,0, False)) #isLeaf is false
 
     while nodesToVisit:
         t1,direction,passedPartials,distance,needsUpdating,lastLK,failedPasses, passedPartialsIsLeaf=nodesToVisit.pop()
@@ -2191,7 +2191,7 @@ def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTop
             if t1.dist and (not (t1.up==node or t1.up==None)):
                 if needsUpdating:
                     midTot=mergeVectorsUpDown(passedPartials,distance/2,t1.probVect,distance/2,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,
-                                              node1isleaf=False, #Because it is a vectup
+                                              node1isleaf=False, #Because it is a vectup, mergeVectorsUpDown
                                               node2isleaf=t1.children==[])
 
                     if not areVectorsDifferent(midTot,t1.probVectTotUp):
@@ -2269,8 +2269,7 @@ def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTop
                     midTot=t1.probVectTotUp
                 if midTot==None:
                     continue
-                midProb=appendProbNode(midTot,removedPartials,removedBLen,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,
-                                       node2isleaf=removedPartialsIsLeaf)
+                midProb=appendProbNode(midTot,removedPartials,removedBLen,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices, node2isleaf=removedPartialsIsLeaf)
                 if midProb>bestLKdiff:
                     bestLKdiff=midProb
                     bestNode=t1
@@ -2278,7 +2277,7 @@ def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTop
                 if midProb>=(bestLKdiff-thresholdLogLKtopology/factorOptimizePlacementLKvsSearchLK):
                     #if needsUpdating, then add to the tuple also the information on the up and down genome lists to use to recalculate intermediate genome lists at varying branch lengths
                     if needsUpdating:
-                        bestNodes.append((t1,midProb,vectUp,midBottom,t1.dist,midTot))
+                        bestNodes.append((t1,midProb,vectUp,midBottom,t1.dist,midTot)) #VectUp can never be a leaf
                     else:
                         bestNodes.append((t1,midProb))
                 if midProb<(lastLK-thresholdLogLKconsecutivePlacement): #placement at current node is considered failed if placement likelihood is not improved by a certain margin compared to best placement so far for the nodes above it.
@@ -2346,8 +2345,8 @@ def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTop
     #todo bestBranchLengths = (none,none,none) but bestCurrentLK has improved...
     bestBranchLengths=(None,None,None)
     bestScore= bestLKdiff #currentLK -1 #float('inf') #
-    compensanteForBranchLengthChange=True
-    secondBranchLengthOptimizationRound=False
+    compensanteForBranchLengthChange=True #true by default, also add the LK cost for changing the Blen in the initial tree.
+    secondBranchLengthOptimizationRound=False #false by default
     for nodePair in bestNodes: # it is strange that bestScore is not replaced in the following part?
         score=nodePair[1]
         if score>=bestLKdiff-thresholdLogLKtopology/factorOptimizePlacementLKvsSearchLK:
@@ -2368,33 +2367,105 @@ def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTop
                 distance=nodePair[4]
                 midTot=nodePair[5]
                 downVectIsLeaf = (nodePair[0].children==[])
-            bestAppendingLength=estimateBranchLengthWithDerivative(midTot,removedPartials,mutMatrix)
+            # Test what happens if flags are set to false:
+            # removedPartialsIsLeaf = False
+            # downVectIsLeaf = False
+            # APPROX1, APPROX2, APPROX3 = False, False, True
+            # midTot = mergeVectorsUpDown(vectUp, t1.dist / 2, midBottom, t1.dist / 2, mutMatrix, useRateVariation=useRateVariation, mutMatrices=mutMatrices, node2isleaf=False)           # midTot is already there
+            # or: midTot = mergeVectorsUpDown(vectUp, t1.dist / 2, downVect, t1.dist / 2, mutMatrix, node2isleaf=downVectIsLeaf)         # midTot is already there
+
+            bestAppendingLength=estimateBranchLengthWithDerivative(midTot,removedPartials,mutMatrix, node2isleaf=removedPartialsIsLeaf) #midTot is no leaf
+
+
             #now optimize appending location
             midLowerVector=mergeVectors(downVect,distance/2,removedPartials,bestAppendingLength,mutMatrix,
                                         node1isleaf=downVectIsLeaf,node2isleaf=removedPartialsIsLeaf)
-            bestTopLength=estimateBranchLengthWithDerivative(upVect,midLowerVector,mutMatrix, node2isleaf=False)
+            # When changing node1isleaf or node2isleaf, it remains 0.
+            bestTopLength=estimateBranchLengthWithDerivative(upVect,midLowerVector,mutMatrix, node2isleaf=False) #midLowerVector is no leaf
+
             midTopVector=mergeVectorsUpDown(upVect,bestTopLength,removedPartials,bestAppendingLength,mutMatrix,
                                             node2isleaf=removedPartialsIsLeaf)
+            # check improve after calculating midTopVector somehow?
             bestBottomLength=estimateBranchLengthWithDerivative(midTopVector,downVect,mutMatrix,
-                                                                node2isleaf=downVectIsLeaf)
+                                                                node2isleaf=downVectIsLeaf) #with the original midTopVect it estimates 0.000709709809765853
             newMidVector=mergeVectorsUpDown(upVect,bestTopLength,downVect,bestBottomLength,mutMatrix,
                                             node2isleaf=downVectIsLeaf)
-            if secondBranchLengthOptimizationRound: #if wanted, do a second round of branch length optimization
-                bestAppendingLength=estimateBranchLengthWithDerivative(newMidVector,removedPartials,mutMatrix,
-                                                                       node2isleaf=removedPartialsIsLeaf)
-                midLowerVector=mergeVectors(downVect,bestBottomLength,removedPartials,bestAppendingLength,mutMatrix,
-                                            node1isleaf=downVectIsLeaf,
-                                            node2isleaf=removedPartialsIsLeaf)#, node1isleaf= node1isleaf,node2isleaf=node2isleaf)
-                bestTopLength=estimateBranchLengthWithDerivative(upVect,midLowerVector,mutMatrix,
-                                                                 node2isleaf=False)
-                midTopVector=mergeVectorsUpDown(upVect,bestTopLength,removedPartials,bestAppendingLength,mutMatrix,
-                                                node2isleaf=removedPartialsIsLeaf)#, node1isleaf= node1isleaf,node2isleaf=node2isleaf )
-                bestBottomLength=estimateBranchLengthWithDerivative(midTopVector,downVect,mutMatrix,
-                                                                    node2isleaf=downVectIsLeaf)
-                newMidVector=mergeVectorsUpDown(upVect,bestTopLength,downVect,bestBottomLength,mutMatrix,
-                                                node2isleaf=downVectIsLeaf)
-            appendingCost=appendProbNode(newMidVector,removedPartials,bestAppendingLength,mutMatrix,
-                                         node2isleaf=removedPartialsIsLeaf)
+            appendingCost=appendProbNode(newMidVector,removedPartials,bestAppendingLength,mutMatrix, node2isleaf=removedPartialsIsLeaf) #shouldn't rate variation be used here and the original one?
+
+            """DEBUGGING CODE AND NOTES"""
+            # print("downVect, upVect")
+            # print(downVect)
+            # print(upVect)
+            # print("midTopVector, old new ")
+            # print(mergeVectors(downVect,distance/2,removedPartials,removedBLen,mutMatrix, node1isleaf=downVectIsLeaf,node2isleaf=removedPartialsIsLeaf))
+            # print(midLowerVector) # are the same
+            # print("midLowerVector, old new ")
+            # print(mergeVectorsUpDown(upVect,distance/2,removedPartials,removedBLen,mutMatrix,node2isleaf=removedPartialsIsLeaf))
+            # print(midLowerVector)
+            # print("newMidVector, old new ")
+            # print(midTot)
+            # print(newMidVector) # compare with midTot
+            # print("new lengths")
+            # print(bestAppendingLength, bestTopLength, bestBottomLength)
+            # print("Improve (?) by new bestAppendingLength, old, new:")
+            # print(appendProbNode(midTot,removedPartials, removedBLen, mutMatrix, node2isleaf=False ))
+            # print(appendProbNode(midTot,removedPartials, bestAppendingLength, mutMatrix, node2isleaf=False )) #stays the same
+            # print("Improve (?) by new bestTopLength, old, new:")
+            # print(appendProbNode(upVect,midLowerVector,distance/2, mutMatrix, node2isleaf=False)) #-7.868328200686365
+            # print(appendProbNode(upVect,midLowerVector,bestTopLength, mutMatrix, node2isleaf=False)) #does improve to -7.769048204598159
+            # print("Improve (?) by new bestBottomLength, old, new:")
+            # print(appendProbNode(midTopVector,downVect,distance/2, mutMatrix,node2isleaf=downVectIsLeaf)) # -10.440259185406116, and with originalMidtTopVector, it is -10.440955840512085
+            # print(appendProbNode(midTopVector,downVect,bestBottomLength, mutMatrix,node2isleaf=downVectIsLeaf)) #worsens?!?!?! to -10.80367068021955 #TODO: Question, could it be correct that this is lower - not all BLen are tested for after all.
+            # print("appendingCost old, new")
+            # print(appendProbNode(midTot,removedPartials,removedBLen,mutMatrix,mutMatrices=mutMatrices,node2isleaf=removedPartialsIsLeaf)) #original ; with or without useRateVariation
+            # print(appendingCost)
+
+            # - ----------------------------------------------
+# def shortenVect(vect, pos, direction=1):
+#     pos = int(pos-1)
+#     newVect =[]
+#     for entry in vect[::direction]:
+#         if entry[1] < pos:
+#             newVect.append(entry)
+#         else:
+#             entry= list(entry)
+#             entry[1] = pos
+#             newVect.append(tuple(entry))
+#             return newVect
+# lRef = 1481
+# downVectIsLeaf = True
+# mutMatrix = [[-0.8397839380152881, 0.1478749673910128, 0.6118225025955456, 0.08008646802872968], [0.2585686827322552, -1.435769845796703, 0.021540539923035597, 1.1556606231414122], [0.8457231374881425, 0.01702856651052903, -0.9138505913154702, 0.05109888731679858], [0.09943753682215804, 0.8206165504318554, 0.04589864812565988, -0.9659527353796733]]
+# distance = 0.0007109008621366237
+# bestBottomLength = 0.0007097094571992797
+# downVect= [(5, 25), (4, 57), (1, 58), (4, 79), (6, 80, [0.4997777777777778, 0.4997777777777778, 0.00011111111111111112, 0.00011111111111111112]), (3, 81), (4, 179), (0, 180), (4, 201), (3, 202), (4, 221), (0, 222), (4, 306), (1, 307), (4, 564), (3, 565), (4, 690), (3, 691), (4, 855), (2, 856), (4, 960), (1, 961), (4, 1413), (5, 1414), (4, 1436), (5, 1481)]
+# midTopVector = [(5, 5), (4, 8, 0.0007026792126183677, False), (2, 9, 0.0007026792126183677, False), (4, 17, 0.0007026792126183677, False), (4, 22), (2, 23), (4, 57), (1, 58), (4, 80), (3, 81), (4, 179), (0, 180), (4, 201), (3, 202), (4, 221), (0, 222), (4, 306), (1, 307), (4, 690), (3, 691), (4, 855), (2, 856), (4, 960), (1, 961), (4, 1413), (5, 1414), (4, 1443), (4, 1444, 0.0007026792126183677, False), (5, 1445), (4, 1453), (4, 1454, 0.0007026792126183677, False), (5, 1455), (4, 1467, 0.0007026792126183677, False), (5, 1481)]
+# lRef=lRef/2
+# downVect = shortenVect(downVect, lRef)
+# midTopVector = shortenVect(midTopVector, lRef)
+# APPROX1, APPROX2, APPROX3 = False, False, True #with other approx it stays the same.
+# print(appendProbNode(midTopVector,downVect,distance/2, mutMatrix,node2isleaf=downVectIsLeaf)) # -10.440259185406116, and with originalMidtTopVector, it is -10.440955840512085
+# bestBottomLength = estimateBranchLengthWithDerivative(midTopVector, downVect, mutMatrix,node2isleaf=downVectIsLeaf)
+# print(appendProbNode(midTopVector,downVect,bestBottomLength, mutMatrix,node2isleaf=downVectIsLeaf))
+#
+#
+#
+#
+
+
+
+#if removedPartialsIsLeaf would be True here and in the normal case, it would yield a better cost
+            #without changing the BLen's?  bestBottomLength+bestTopLength (new) = distance (original)
+            #ORIGNIAL:
+            # values for S124 as bestNode.
+            # distance  =0.0007109008621366237
+            # bestTopLength = 0.000000 =?= distance /2 = 0.00035545043106831184
+            # bestbottomlength = 0.0007097094571992797 =?= distance/2  =  0.00035545043106831184
+            # bestAppendingLength = 0 =?=removedBLen = 0
+            # todo: what happens if we run it with originalEstimateBranchLength. > strip all flags
+            #midVector new:
+            #without flags: [(5, 5), (4, 8, 0.0007026792126183677, False), (2, 9, 0.0007026792126183677, False), (4, 25, 0.0007026792126183677, False), (4, 57), (1, 58), (4, 80), (3, 81), (4, 129), (6, 130, [9.254533638706839e-13, 0.999999760115169, 3.6725676625660155e-15, 2.398839018772255e-07]), (4, 179), (0, 180), (4, 201), (6, 202, [5.606537713432484e-15, 1.954635357779514e-08, 2.6658713105287005e-16, 0.9999999804536406]), (4, 221), (0, 222), (4, 306), (1, 307), (4, 690), (3, 691), (4, 756), (6, 757, [2.809915058719443e-13, 4.459140785794461e-07, 2.971700999401853e-14, 0.9999995540856107]), (4, 855), (2, 856), (4, 960), (1, 961), (4, 984), (6, 985, [1.35716744916673e-07, 1.319179590322989e-14, 0.9999998642831897, 5.2283667639169255e-14]), (4, 1413), (5, 1414), (4, 1436), (4, 1444, 0.0007026792126183677, False), (5, 1445), (4, 1454, 0.0007026792126183677, False), (5, 1455), (4, 1467, 0.0007026792126183677, False), (5, 1481)]
+            # with flags: [(5, 5), (4, 8, 0.0007026792126183677, False), (2, 9, 0.0007026792126183677, False), (4, 25, 0.0007026792126183677, False), (4, 57), (1, 58), (4, 80), (3, 81), (4, 129), (6, 130, [2.395731453793698e-12, 0.9999996914712072, 5.434499572699134e-14, 3.0852634283698257e-07]), (4, 179), (0, 180), (4, 201), (6, 202, [2.2053898215747942e-14, 2.3517026751977242e-08, 1.4923240960757296e-15, 0.9999999764829497]), (4, 221), (0, 222), (4, 306), (1, 307), (4, 690), (3, 691), (4, 756), (6, 757, [1.1053091676169534e-12, 5.36497631899299e-07, 1.6635238940885528e-13, 0.9999994635010965]), (4, 855), (2, 856), (4, 960), (1, 961), (4, 984), (6, 985, [1.8781275677684036e-07, 1.5708026171041114e-13, 0.9999998121867663, 3.199151990965618e-13]), (4, 1413), (5, 1414), (4, 1436), (4, 1444, 0.0007026792126183677, False), (5, 1445), (4, 1454, 0.0007026792126183677, False), (5, 1455), (4, 1467, 0.0007026792126183677, False), (5, 1481)]
+
             if compensanteForBranchLengthChange: #if wanted, do a more thorough examination of the appending cost, taking into account a possible change in branch length of the branch on which to be appended.
                 initialCost=appendProbNode(upVect,downVect,distance,mutMatrix, node2isleaf=downVectIsLeaf)
                 newPartialCost=appendProbNode(upVect,downVect,bestBottomLength+bestTopLength,mutMatrix, node2isleaf=downVectIsLeaf)
@@ -3736,6 +3807,9 @@ def traverseTreeForTopologyUpdate(node,mutMatrix,strictTopologyStopRules=strictT
             #bestNodeSoFar , bestLKdiff , bestIsMidNode = findBestParentTopologyOld(parentNode,child,bestCurrentLK,bestCurrenBLen,mutMatrix)
             #bestNodeSoFar , bestLKdiff , bestIsMidNode = findBestParent(parentNode,child,bestCurrentLK,bestCurrenBLen,mutMatrix,strictTopologyStopRules=strictTopologyStopRules,allowedFailsTopology=allowedFailsTopology,thresholdLogLKtopology=thresholdLogLKtopology,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
             bestNodeSoFar , bestLKdiff , bestBranchLengths = findBestParentTopology(parentNode,child,bestCurrentLK,bestCurrenBLen,mutMatrix,strictTopologyStopRules=strictTopologyStopRules,allowedFailsTopology=allowedFailsTopology,thresholdLogLKtopology=thresholdLogLKtopology,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
+            if bestBranchLengths == (None, None, None): # remove , only for debugging
+                bestNodeSoFar , bestLKdiff , bestBranchLengths = findBestParentTopology(parentNode,child,bestCurrentLK,bestCurrenBLen,mutMatrix,strictTopologyStopRules=strictTopologyStopRules,allowedFailsTopology=allowedFailsTopology,thresholdLogLKtopology=thresholdLogLKtopology,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
+
             # if bestLKdiff>thresholdProb2:
             # 	print("Strange, LK cost is positive")
             # 	print(bestLKdiff)
@@ -4739,6 +4813,7 @@ def appendProbNodeErrorRate(probVectP,probVectC,bLen,mutMatrix,useRateVariation=
     The errorrate version of 'appendProbNode'.
     :param node2isleaf: True if probVectC arrives from a leaf node. (probVectP can never arrive from a leaf node)
     """
+    lRef = probVectP[-1][1]
     Lkcost, indexEntry1, indexEntry2, totalFactor, pos = 0.0, 0, 0, 1.0, 0
     entry1=probVectP[indexEntry1]
     entry2=probVectC[indexEntry2]
@@ -5425,7 +5500,7 @@ def mergeVectorsUpDownError(probVect1,bLenUp,probVect2,bLenDown,mutMatrix,useRat
                         tot+=rootVec[j]
                         newVec.append(tot)
                 else:
-                    newVec = getPartialVec(i1, flag1, totLen1, errorRate, upNode=True)
+                    newVec = getPartialVec(i1, flag1, totLen1, errorRate, upNode=True) # check again if this is correct?
                 if entry2[0]==6: #entry 2 is "O" and entry1 is a nucleotide
                     for j in range4:
                         tot=0.0
@@ -6041,6 +6116,7 @@ def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,us
     The errorrate version of 'estimateBranchLengthWithDerivative',
     :param node2isleaf: True if probVectC is from a leaf node.
     """
+    lRef = probVectP[-1][1]
     c1=0.0
     ais=[]
     indexEntry1, indexEntry2, pos = 0, 0, 0
@@ -6168,7 +6244,7 @@ def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,us
                         if contribLength:
                             coeff0=contribLength + errorRate*flag2/(3*mutMatrix[i1][i2])
                         else:
-                            coeff0=0.0
+                            coeff0=0.0 #todo: maybe add + errorRate*flag2/(3*mutMatrix[i1][i2])
                     ais.append(coeff0)
                     pos+=1
 
@@ -6694,6 +6770,64 @@ def activateErrorFunctions(activate=True, activatefirsttime=False):
         reCalculateAllGenomeLists =reCalculateAllGenomeListsOriginal
         areVectorsDifferent = areVectorsDifferentOriginal
 
+
+#------------------------------------
+
+def shortenVect(vect, pos, direction=1):
+    global lRef
+    pos = int(pos-0.5)
+    newVect =[]
+    for entry in vect[::direction]:
+        if (entry[1] < pos and direction==1) or (entry[1] > pos and direction==-1):
+            newVect.append(entry)
+        else:
+            entry= list(entry)
+            entry[1] = pos #lRef if direction ==1 else pos
+            newVect.append(tuple(entry))
+            return newVect[::direction]
+
+errorRate = 0.0005
+APPROX1, APPROX2, APPROX3 = False, False, True  # with other approx it stays the same.
+lRefOriginal = 1481
+downVectIsLeaf = True
+mutMatrix = [[-0.8397839380152881, 0.1478749673910128, 0.6118225025955456, 0.08008646802872968], [0.2585686827322552, -1.435769845796703, 0.021540539923035597, 1.1556606231414122], [0.8457231374881425, 0.01702856651052903, -0.9138505913154702, 0.05109888731679858], [0.09943753682215804, 0.8206165504318554, 0.04589864812565988, -0.9659527353796733]]
+distance = 0.0007109008621366237
+
+#Problem:
+downVect= [ (4, 564), (3, 565),  (4, 1481)]
+midTopVector = [ (4, 1481)]
+print(downVect)
+print(midTopVector)
+print(appendProbNodeErrorRate(midTopVector,downVect,distance/2, mutMatrix,node2isleaf=downVectIsLeaf)) #-9.807950531805874 # totalFactor*=(mutMatrix[refIndeces[pos]][entry2[0]]*contribLength + flag2*errorRate/3)  = 0.00019513343625021721
+bestBottomLength = errorRateEstimateBranchLengthWithDerivative(midTopVector, downVect, mutMatrix,node2isleaf=downVectIsLeaf) #coeff0 =0 , or errorRate*flag2/(3*mutMatrix[i1][i2])
+print(appendProbNodeErrorRate(midTopVector,downVect,bestBottomLength, mutMatrix,node2isleaf=downVectIsLeaf)) # -10.158374230041579
+print(bestBottomLength)
+
+
+bestBottomLength = 0.0007097094571992797
+downVect= [(5, 25), (4, 57), (1, 58), (4, 79), (6, 80, [0.4997777777777778, 0.4997777777777778, 0.00011111111111111112, 0.00011111111111111112]), (3, 81), (4, 179), (0, 180), (4, 201), (3, 202), (4, 221), (0, 222), (4, 306), (1, 307), (4, 564), (3, 565), (4, 690), (3, 691), (4, 855), (2, 856), (4, 960), (1, 961), (4, 1413), (5, 1414), (4, 1436), (5, 1481)]
+midTopVector = [(5, 5), (4, 8, 0.0007026792126183677, False), (2, 9, 0.0007026792126183677, False), (4, 17, 0.0007026792126183677, False), (4, 22), (2, 23), (4, 57), (1, 58), (4, 80), (3, 81), (4, 179), (0, 180), (4, 201), (3, 202), (4, 221), (0, 222), (4, 306), (1, 307), (4, 690), (3, 691), (4, 855), (2, 856), (4, 960), (1, 961), (4, 1413), (5, 1414), (4, 1443), (4, 1444, 0.0007026792126183677, False), (5, 1445), (4, 1453), (4, 1454, 0.0007026792126183677, False), (5, 1455), (4, 1467, 0.0007026792126183677, False), (5, 1481)]
+
+pos = lRef
+while len(downVect) >2 and pos>2:
+    downVect = shortenVect(downVect, pos, direction=1)
+    midTopVector = shortenVect(midTopVector, pos, direction=1)
+    print(downVect)
+    print(midTopVector)
+    print(appendProbNodeErrorRate(midTopVector,downVect,distance/2, mutMatrix,node2isleaf=downVectIsLeaf)) # -10.440259185406116, and with originalMidtTopVector, it is -10.440955840512085
+    bestBottomLength = errorRateEstimateBranchLengthWithDerivative(midTopVector, downVect, mutMatrix,node2isleaf=downVectIsLeaf)
+    print(appendProbNodeErrorRate(midTopVector,downVect,bestBottomLength, mutMatrix,node2isleaf=downVectIsLeaf))
+    print(bestBottomLength)
+    pos = pos/2
+
+
+
+
+# complete
+# from pos 739: Lk from -0.49 to 0 (with Blen 0)
+# until pos 739: LK from -11.41575727680439 to -10.795411194735642 (with Blen 0.00139)
+
+#-------------------------------------
 errorRate = args.errorRate
 if errorRate:
     activateErrorFunctions(activate=True, activatefirsttime=True) #replace normal functions with pointers to their error rate variants.
