@@ -84,7 +84,7 @@ parser.add_argument("--minBLen",help="Don't attempt branch lengths below this nu
 parser.add_argument("--maxBLen",help="Don't attempt branch lengths above this number of mutations (genome-wide).",  type=float, default=40.0)
 parser.add_argument("--thresholdLogLKconsecutivePlacement",help="logLK difference threshold to consider something as a significant decrease in log-LK when considering consecutive likelihood decreases.",  type=float, default=0.01)
 parser.add_argument("--thresholdLogLKwholeTopologyImprovement",help="logLK difference threshold to consider something as a significant decrease in log-LK when considering whole rounds of SPR moves.",  type=float, default=1.0)
-parser.add_argument("--calculateLKfinalTree", help="Calculate the log-LK of the final infered tree.", action="store_true")
+parser.add_argument("--calculateLKfinalTree", help="Calculate the log-LK of the final infered tree.", action="store_true", default=True)
 parser.add_argument("--fast", help="Set parameters so to run tree inference faster; this will be less accurate in cases of high complexity, for example with recombination, sequencing errors, etc. It will overrule user choices for options --thresholdLogLK , --thresholdLogLKtopology , --allowedFails , --allowedFailsTopology .", action="store_true")
 #parser.add_argument("--fastPreliminaryPlacement", help="When placing each sample run first a fast search and then start the proper search from there. Not recommended as this comes at accuracy cost and brings little to no computational advantage.", action="store_true")
 parser.add_argument("--noFastTopologyInitialSearch", help="Don't run a fast short-range topology search before the extensive one.", action="store_true")
@@ -2379,13 +2379,11 @@ def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTop
 
             #now optimize appending location
             midLowerVector=mergeVectors(downVect,distance/2,removedPartials,bestAppendingLength,mutMatrix,
-                                        node1isleaf=downVectIsLeaf,node2isleaf=removedPartialsIsLeaf)
-            # When changing node1isleaf or node2isleaf, it remains 0.
+                                        node1isleaf=downVectIsLeaf,node2isleaf=removedPartialsIsLeaf) # When changing node1isleaf or node2isleaf, it remains 0.
             bestTopLength=estimateBranchLengthWithDerivative(upVect,midLowerVector,mutMatrix, node2isleaf=False) #midLowerVector is no leaf
 
             midTopVector=mergeVectorsUpDown(upVect,bestTopLength,removedPartials,bestAppendingLength,mutMatrix,
                                             node2isleaf=removedPartialsIsLeaf)
-            # check improve after calculating midTopVector somehow?
             bestBottomLength=estimateBranchLengthWithDerivative(midTopVector,downVect,mutMatrix,
                                                                 node2isleaf=downVectIsLeaf) #with the original midTopVect it estimates 0.000709709809765853
             newMidVector=mergeVectorsUpDown(upVect,bestTopLength,downVect,bestBottomLength,mutMatrix,
@@ -3751,9 +3749,9 @@ def cutAndPasteNode(node,bestNode,bestBranchLengths,bestLK,mutMatrix,useRateVari
         #print("after re-attaching subtree to the tree: "+createBinaryNewick(root))
         #print(sibling.probVectUpLeft)
         #print(sibling.children)
-        #print(sibling.up)
-        #print("And subtree "+createBinaryNewick(sibling))
+        #print(sibling.up); #print("And subtree "+createBinaryNewick(sibling))
     #if the root of the tree has changed, return the new root
+    reCalculateAllGenomeLists(newRoot, mutMatrix, checkExistingAreCorrect=True, useRateVariation=useRateVariation, mutMatrices=mutMatrices) #toto check recaclulate tree, see if all partials have been updated correctly.
     if sibling.up==None:
         return sibling
     else:
@@ -3786,14 +3784,14 @@ def traverseTreeForTopologyUpdate(node,mutMatrix,strictTopologyStopRules=strictT
         #score of current tree
         bestOriginalBLen=node.dist #remove
         bestCurrenBLen=node.dist
-        originalLK=appendProbNode(vectUp,node.probVect,bestCurrenBLen,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
+        originalLK=appendProbNode(vectUp,node.probVect,bestCurrenBLen,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices, node2isleaf=(node.children==[]))
         bestCurrentLK=originalLK
         if bestCurrentLK<thresholdTopologyPlacement:
             bestCurrenBLen=estimateBranchLengthWithDerivative(vectUp,node.probVect,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices, node2isleaf=(node.children==[]))
             if bestCurrenBLen or node.dist:
-                if (not bestCurrenBLen) or (not node.dist) or node.dist/bestCurrenBLen>1.01 or node.dist/bestCurrenBLen<0.99:
-                    bLenChanged=True
                 bestCurrentLK=appendProbNode(vectUp,node.probVect,bestCurrenBLen,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices, node2isleaf=(node.children==[]))
+                if (not bestCurrenBLen) or (not node.dist) or node.dist/bestCurrenBLen>1.01 or node.dist/bestCurrenBLen<0.99:
+                    bLenChanged=True; totalImprovement = bestCurrentLK - originalLK #remove
         topologyUpdated=False
         if bestCurrentLK<thresholdTopologyPlacement:
             #now find the best place on the tree where to re-attach the subtree rooted ar "node"
@@ -3807,8 +3805,8 @@ def traverseTreeForTopologyUpdate(node,mutMatrix,strictTopologyStopRules=strictT
             #bestNodeSoFar , bestLKdiff , bestIsMidNode = findBestParentTopologyOld(parentNode,child,bestCurrentLK,bestCurrenBLen,mutMatrix)
             #bestNodeSoFar , bestLKdiff , bestIsMidNode = findBestParent(parentNode,child,bestCurrentLK,bestCurrenBLen,mutMatrix,strictTopologyStopRules=strictTopologyStopRules,allowedFailsTopology=allowedFailsTopology,thresholdLogLKtopology=thresholdLogLKtopology,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
             bestNodeSoFar , bestLKdiff , bestBranchLengths = findBestParentTopology(parentNode,child,bestCurrentLK,bestCurrenBLen,mutMatrix,strictTopologyStopRules=strictTopologyStopRules,allowedFailsTopology=allowedFailsTopology,thresholdLogLKtopology=thresholdLogLKtopology,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
-            if bestBranchLengths == (None, None, None): # remove , only for debugging
-                bestNodeSoFar , bestLKdiff , bestBranchLengths = findBestParentTopology(parentNode,child,bestCurrentLK,bestCurrenBLen,mutMatrix,strictTopologyStopRules=strictTopologyStopRules,allowedFailsTopology=allowedFailsTopology,thresholdLogLKtopology=thresholdLogLKtopology,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
+            # if bestBranchLengths == (None, None, None): # remove , only for debugging
+            #     bestNodeSoFar , bestLKdiff , bestBranchLengths = findBestParentTopology(parentNode,child,bestCurrentLK,bestCurrenBLen,mutMatrix,strictTopologyStopRules=strictTopologyStopRules,allowedFailsTopology=allowedFailsTopology,thresholdLogLKtopology=thresholdLogLKtopology,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
 
             # if bestLKdiff>thresholdProb2:
             # 	print("Strange, LK cost is positive")
@@ -3847,6 +3845,7 @@ def traverseTreeForTopologyUpdate(node,mutMatrix,strictTopologyStopRules=strictT
                     if verbose:
                         print("\n\n In traverseTreeForTopologyUpdate() found SPR move with improvement "+str(totalImprovement))
                     if debugging:
+                        print("\n\n In traverseTreeForTopologyUpdate() found SPR move with improvement "+str(totalImprovement))
                         print("Performing SPR move, detaching node "+str(node)+" with children")
                         print(node.children)
                         print("and reattaching it around node "+str(bestNodeSoFar)+" with children")
@@ -3855,6 +3854,8 @@ def traverseTreeForTopologyUpdate(node,mutMatrix,strictTopologyStopRules=strictT
                         while root.up!=None:
                             root=root.up
                         #print("Tree before cutAndPasteNode(): "+createBinaryNewick(root))
+                    if hasattr(bestNodeSoFar, "name"):
+                        if bestNodeSoFar.name =='S121': findBestParentTopology(parentNode, child, bestCurrentLK, bestCurrenBLen, mutMatrix, strictTopologyStopRules=strictTopologyStopRules,allowedFailsTopology=allowedFailsTopology,thresholdLogLKtopology=thresholdLogLKtopology,    useRateVariation=useRateVariation, mutMatrices=mutMatrices)
                     newRoot = cutAndPasteNode(node,bestNodeSoFar,bestBranchLengths,bestLKdiff,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
                     bLenChanged=False
         if (not topologyUpdated) and bLenChanged:
@@ -3894,7 +3895,7 @@ def startTopologyUpdates(node,mutMatrix,checkEachSPR=False,strictTopologyStopRul
                 root=newNode
                 while root.up!=None:
                     root=root.up
-                #print("Pre-SPR tree: "+createBinaryNewick(root))
+                reCalculateAllGenomeLists(root,mutMatrix, checkExistingAreCorrect=True,useRateVariation=useRateVariation,mutMatrices=mutMatrices)# remove!                #print("Pre-SPR tree: "+createBinaryNewick(root))
                 oldTreeLK=calculateTreeLikelihood(root,mutMatrix,checkCorrectness=True,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
                 #print("Pre-SPR tree likelihood: "+str(oldTreeLK))
                 reCalculateAllGenomeLists(root,mutMatrix, checkExistingAreCorrect=True,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
@@ -3904,14 +3905,15 @@ def startTopologyUpdates(node,mutMatrix,checkEachSPR=False,strictTopologyStopRul
                 root=newNode
                 while root.up!=None:
                     root=root.up
-                #print("Post-SPR tree: "+createBinaryNewick(root))
+                reCalculateAllGenomeLists(root,mutMatrix, checkExistingAreCorrect=True,useRateVariation=useRateVariation,mutMatrices=mutMatrices) #remove               #print("Post-SPR tree: "+createBinaryNewick(root))
                 newTreeLK=calculateTreeLikelihood(root,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
                 reCalculateAllGenomeLists(root,mutMatrix, checkExistingAreCorrect=True,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
                 #print("Post-SPR tree likelihood: "+str(newTreeLK))
-                #print("In startTopologyUpdates, LK score of improvement "+str(newTreeLK)+" - "+str(oldTreeLK)+" = "+str(newTreeLK-oldTreeLK)+", was supposed to be "+str(improvement))
-                if newTreeLK-oldTreeLK < improvement-1.0:
-                    print("In startTopologyUpdates, LK score of improvement "+str(newTreeLK)+" - "+str(oldTreeLK)+" = "+str(newTreeLK-oldTreeLK)+" is less than what is supposd to be "+str(improvement))
+                print("In startTopologyUpdates, LK score of improvement "+str(newTreeLK)+" - "+str(oldTreeLK)+" = "+str(newTreeLK-oldTreeLK)+", was supposed to be "+str(improvement))
+                if newTreeLK-oldTreeLK < improvement-0.1:#1.0:
+                    print("In startTopologyUpdates, LK score of improvement "+str(newTreeLK)+" - "+str(oldTreeLK)+" = "+str(newTreeLK-oldTreeLK)+" is less than what is supposed to be "+str(improvement))
                     #raise Exception("exit")
+                    # In startTopologyUpdates, LK score of improvement -4029.2451376863723 - -4028.3851970278783 = -0.859940658493997 is less than what is supposd to be 1.1674419238238682, after SPR move to S121
             totalImprovement+=improvement
             if newRoot2!=None:
                 newRoot=newRoot2
@@ -4872,17 +4874,15 @@ def appendProbNodeErrorRate(probVectP,probVectC,bLen,mutMatrix,useRateVariation=
                         Lkcost+=contribLength*(cumulativeRate[end]-cumulativeRate[pos])
                         pos=end
                     else:
-                        if contribLength:
-                            end=min(entry1[1],entry2[1])
-                            Lkcost+=contribLength*(cumulativeRate[end]-cumulativeRate[pos])
-                            if flag1 + flag2:
-                                # cumErrorRate  = cumulativeErrorRate[end]-cumulativeErrorRate[pos]  #cumulativeErrorRate should be log scaled already.
-                                if APPROX1: cumErrorRate = log(1 - errorRate) * (end - pos)  # Approximation 1
-                                else: cumErrorRate =-errorRate*(end-pos)                     #Approximation 2                                Lkcost-= cumErrorRate * (flag1 + flag2)
-                                Lkcost += cumErrorRate * (flag1 + flag2)
-                            pos=end
-                        else:
-                            pos=min(entry1[1],entry2[1])
+                        end=min(entry1[1],entry2[1])
+                        if flag1 + flag2:
+                            # cumErrorRate  = cumulativeErrorRate[end]-cumulativeErrorRate[pos]  #cumulativeErrorRate should be log(1-error) scaled already for it to be approximation 1.
+                            if APPROX1:cumErrorRate = log(1 - errorRate) * (end - pos)  # Approximation 1
+                            else:cumErrorRate = -errorRate * (end - pos)  # Approximation 2
+                            Lkcost += cumErrorRate * (flag1 + flag2) #changed 14/9, also if not contribLength, will the error rate be taken into account.
+                        if contribLength: #changed 14/9
+                            Lkcost += contribLength * (cumulativeRate[end] - cumulativeRate[pos])
+                        pos = end
 
                 #Case τ2= O: entry1 is reference and entry2 is of type "O"
                 elif entry2[0]==6: #flag2 will be false
@@ -4935,7 +4935,7 @@ def appendProbNodeErrorRate(probVectP,probVectC,bLen,mutMatrix,useRateVariation=
                                        (1.0+mutMatrix[i2][i2]*contribLength-errorRate*flag2)) #MULTIPLIED by the prob that NO mutation (or error) occured on entry2's side of the root
                                       )
                     else: #only flag2 can be true.
-                        if contribLength:
+                        if contribLength or flag2: #changed 14/9
                             totalFactor*=(mutMatrix[refIndeces[pos]][entry2[0]]*contribLength + flag2*errorRate/3) #error rate. Flag1 will be false here.
                         else:
                             return float("-inf")
@@ -4960,7 +4960,7 @@ def appendProbNodeErrorRate(probVectP,probVectC,bLen,mutMatrix,useRateVariation=
                         i2=refIndeces[pos]
                     else:
                         i2=entry2[0]
-                    if contribLength:
+                    if contribLength or flag2: #changed 14/9
                         tot2=0
                         for i in range4:
                             tot2 += entry1[-1][i]*mutMatrix[i][i2]
@@ -4975,7 +4975,7 @@ def appendProbNodeErrorRate(probVectP,probVectC,bLen,mutMatrix,useRateVariation=
                 if entry2[0]==entry1[0]: #entry1 = entry2
                     if len(entry1)==5: #errorrate ==5 instead of ==4
                         contribLength+=entry1[2]
-                    if contribLength:
+                    if contribLength or (flag1 +flag2): #changed 14/9
                         Lkcost+=mutMatrix[entry1[0]][entry1[0]]*contribLength + (flag1 +flag2)*log(1-errorRate) #OR: if error rate is very low, - errorRate(flag1 +flag2)
                 else: #entry1 is a nucleotide and entry2 is not the same as entry1
                     i1=entry1[0]
@@ -4996,7 +4996,7 @@ def appendProbNodeErrorRate(probVectP,probVectC,bLen,mutMatrix,useRateVariation=
                                            (1.0+mutMatrix[i2][i2]*contribLength-errorRate*flag2)) #MULTIPLIED by the prob that NO mutation (or error) occured on entry2's side of the root
                                           )
                         else:
-                            if contribLength:
+                            if contribLength or flag2: #changed 14/9
                                 totalFactor*=(mutMatrix[i1][i2]*contribLength + flag2*errorRate/3) #error rate. Flag1 will be false
                             else:
                                 return float("-inf") #QUESTION. why does this happen? Should it happen that bLen=0 in such cases?
@@ -5459,7 +5459,7 @@ def mergeVectorsUpDownError(probVect1,bLenUp,probVect2,bLenDown,mutMatrix,useRat
                     totLen2=entry2[2]
                     if bLenDown:
                         totLen2+=bLenDown
-            if entry2[0]<5 and (not totLen2): #due to 0 distance, the entry will be of same type as entry2
+            if entry2[0]<5 and (not totLen2) and (not flag2): #changed 14/9 : #due to 0 distance, the entry will be of same type as entry2
                 if (not totLen1) and entry1[0]<5:
                     #print("mergeVectorsUpDown() returning None 1")
                     #print(entry1)
@@ -5668,8 +5668,8 @@ def mergeVectorsError(probVect1, bLen1, probVect2, bLen2, mutMatrix, returnLK=Fa
                     else: #0-branch length: no need to set the flag
                         probVect.append((entry1[0], pos))
                 else:
-                    assert (type(entry1[-1]) == bool)
-                    assert (len(entry1) == 4)
+                    assert (type(entry1[-1]) == bool) #remove
+                    assert (len(entry1) == 4) #remove
                     if bLen1:
                         probVect.append((entry1[0], pos, entry1[2] + bLen1, entry1[3])) #set flag = flag1 (entry1[3])
                     else:
@@ -5731,12 +5731,12 @@ def mergeVectorsError(probVect1, bLen1, probVect2, bLen2, mutMatrix, returnLK=Fa
                             cumulPartLk += mutMatrices[pos][entry1[0]][entry1[0]] * (totLen1 + totLen2)
                         else:
                             cumulPartLk += nonMutRates[entry1[0]] * (totLen1 + totLen2)
-                    if flag1 + flag2:
+                    if flag1 or flag2:
                         if APPROX1: cumErrorRate = log(1 - errorRate) * (end - pos)  # Approximation 1
                         else: cumErrorRate = -errorRate * (end - pos)  # Approximation 2
                         cumulPartLk += cumErrorRate * (flag1 + flag2)
                 pos = end
-            elif (not totLen1) and (not totLen2) and entry1[0] < 5 and entry2[0] < 5:  # 0 distance between different nucleotides: merge is not possible
+            elif (not totLen1) and (not totLen2) and entry1[0] < 5 and entry2[0] < 5 and (not flag2) and (not flag1): #changed 14/9  # 0 distance between different nucleotides: merge is not possible
                 if returnLK:
                     return None, float("-inf")
                 else:
@@ -5806,13 +5806,13 @@ def mergeVectorsError(probVect1, bLen1, probVect2, bLen2, mutMatrix, returnLK=Fa
                         else:
                             probVect.append((state, pos)) #no flag, because 0-branch length element and flag=False
                         if returnLK:
-                            cumulPartLk += log(sumV)
+                            cumulPartLk += log(sumV) #todo: test should equal errorRate/3 if flag1 = false, flag2=true, totLen1=0, totLen2=0
                     else:
                         pos += 1
 
                         probVect.append((entry2[0], pos))
                         if returnLK:
-                            cumulPartLk += log(newVec[i2])
+                            cumulPartLk += log(newVec[i2]) #should equal errorRate/3 if flag1 = true, flag2=False, totLen1=0, totLen2=0
 
             else:  # entry1[0]==6:
                 if useRateVariation:
@@ -6089,7 +6089,7 @@ def reCalculateWithErrors(root,mutMatrix, errorRate=errorRate, checkExistingAreC
                                 print(node.children[0].dist)
                                 print(newUpLeft)
                                 print()
-                                print(node.probVectUpLeft)
+                                print(node.probVectUpLeft) # original one does not account for errors.
                                 print()
                                 print(vectUp)
                                 print()
@@ -6241,10 +6241,10 @@ def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,us
 
                         coeff0=coeff0/coeff1
                     else: #ErrorRate : only f2 can be true.
-                        if contribLength:
+                        if contribLength or flag2: #changed 14/9
                             coeff0=contribLength + errorRate*flag2/(3*mutMatrix[i1][i2])
                         else:
-                            coeff0=0.0 #todo: maybe add + errorRate*flag2/(3*mutMatrix[i1][i2])
+                            coeff0=0.0
                     ais.append(coeff0)
                     pos+=1
 
@@ -6333,7 +6333,7 @@ def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,us
                                     coeff1=rootFreqs[i1]*mutMatrix[i1][i2]
                             coeff0=coeff0/coeff1
                         else:
-                            if contribLength:
+                            if contribLength or flag2: #changed 14/9
                                 coeff0=contribLength + errorRate*flag2/(3*mutMatrix[i1][i2])
                             else:
                                 coeff0=0.0
@@ -6771,68 +6771,10 @@ def activateErrorFunctions(activate=True, activatefirsttime=False):
         areVectorsDifferent = areVectorsDifferentOriginal
 
 
-#------------------------------------
-
-def shortenVect(vect, pos, direction=1):
-    global lRef
-    pos = int(pos-0.5)
-    newVect =[]
-    for entry in vect[::direction]:
-        if (entry[1] < pos and direction==1) or (entry[1] > pos and direction==-1):
-            newVect.append(entry)
-        else:
-            entry= list(entry)
-            entry[1] = pos #lRef if direction ==1 else pos
-            newVect.append(tuple(entry))
-            return newVect[::direction]
-
-errorRate = 0.0005
-APPROX1, APPROX2, APPROX3 = False, False, True  # with other approx it stays the same.
-lRefOriginal = 1481
-downVectIsLeaf = True
-mutMatrix = [[-0.8397839380152881, 0.1478749673910128, 0.6118225025955456, 0.08008646802872968], [0.2585686827322552, -1.435769845796703, 0.021540539923035597, 1.1556606231414122], [0.8457231374881425, 0.01702856651052903, -0.9138505913154702, 0.05109888731679858], [0.09943753682215804, 0.8206165504318554, 0.04589864812565988, -0.9659527353796733]]
-distance = 0.0007109008621366237
-
-#Problem:
-downVect= [ (4, 564), (3, 565),  (4, 1481)]
-midTopVector = [ (4, 1481)]
-print(downVect)
-print(midTopVector)
-print(appendProbNodeErrorRate(midTopVector,downVect,distance/2, mutMatrix,node2isleaf=downVectIsLeaf)) #-9.807950531805874 # totalFactor*=(mutMatrix[refIndeces[pos]][entry2[0]]*contribLength + flag2*errorRate/3)  = 0.00019513343625021721
-bestBottomLength = errorRateEstimateBranchLengthWithDerivative(midTopVector, downVect, mutMatrix,node2isleaf=downVectIsLeaf) #coeff0 =0 , or errorRate*flag2/(3*mutMatrix[i1][i2])
-print(appendProbNodeErrorRate(midTopVector,downVect,bestBottomLength, mutMatrix,node2isleaf=downVectIsLeaf)) # -10.158374230041579
-print(bestBottomLength)
-
-
-bestBottomLength = 0.0007097094571992797
-downVect= [(5, 25), (4, 57), (1, 58), (4, 79), (6, 80, [0.4997777777777778, 0.4997777777777778, 0.00011111111111111112, 0.00011111111111111112]), (3, 81), (4, 179), (0, 180), (4, 201), (3, 202), (4, 221), (0, 222), (4, 306), (1, 307), (4, 564), (3, 565), (4, 690), (3, 691), (4, 855), (2, 856), (4, 960), (1, 961), (4, 1413), (5, 1414), (4, 1436), (5, 1481)]
-midTopVector = [(5, 5), (4, 8, 0.0007026792126183677, False), (2, 9, 0.0007026792126183677, False), (4, 17, 0.0007026792126183677, False), (4, 22), (2, 23), (4, 57), (1, 58), (4, 80), (3, 81), (4, 179), (0, 180), (4, 201), (3, 202), (4, 221), (0, 222), (4, 306), (1, 307), (4, 690), (3, 691), (4, 855), (2, 856), (4, 960), (1, 961), (4, 1413), (5, 1414), (4, 1443), (4, 1444, 0.0007026792126183677, False), (5, 1445), (4, 1453), (4, 1454, 0.0007026792126183677, False), (5, 1455), (4, 1467, 0.0007026792126183677, False), (5, 1481)]
-
-pos = lRef
-while len(downVect) >2 and pos>2:
-    downVect = shortenVect(downVect, pos, direction=1)
-    midTopVector = shortenVect(midTopVector, pos, direction=1)
-    print(downVect)
-    print(midTopVector)
-    print(appendProbNodeErrorRate(midTopVector,downVect,distance/2, mutMatrix,node2isleaf=downVectIsLeaf)) # -10.440259185406116, and with originalMidtTopVector, it is -10.440955840512085
-    bestBottomLength = errorRateEstimateBranchLengthWithDerivative(midTopVector, downVect, mutMatrix,node2isleaf=downVectIsLeaf)
-    print(appendProbNodeErrorRate(midTopVector,downVect,bestBottomLength, mutMatrix,node2isleaf=downVectIsLeaf))
-    print(bestBottomLength)
-    pos = pos/2
-
-
-
-
-# complete
-# from pos 739: Lk from -0.49 to 0 (with Blen 0)
-# until pos 739: LK from -11.41575727680439 to -10.795411194735642 (with Blen 0.00139)
-
-#-------------------------------------
 errorRate = args.errorRate
 if errorRate:
     activateErrorFunctions(activate=True, activatefirsttime=True) #replace normal functions with pointers to their error rate variants.
     if debugging: print("start recalculating with ErrorRate")
-    errorRate=0.0005
     reCalculateWithErrors(t1, mutMatrix, errorRate,useRateVariation=rateVariation,mutMatrices=mutMatrices,firstTimeError=True)
     if debugging: print("ErrorRate included")
 
@@ -6987,12 +6929,13 @@ if not debugging and inputTree=="":
     while nextLeaves:
         node=nextLeaves.pop()
         if not node.children:
-            name=sampleNames[node.name[1:]] #strip the 'S'off here.
-            sampleNames[node.name]=None
+            name=sampleNames[int(node.name[1:])] #strip the 'S'off here.
+            sampleNames[int(node.name[1:])]=None
             node.name=name
             for m in range(len(node.minorSequences)):
-                name=sampleNames[node.minorSequences[m]]
-                sampleNames[node.minorSequences[m]]=None
+                old_name = int(node.minorSequences[m][1:])
+                name=sampleNames[old_name]
+                sampleNames[old_name]=None
                 node.minorSequences[m]=name
         else:
             for c in node.children:
