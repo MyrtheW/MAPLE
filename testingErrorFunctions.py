@@ -170,3 +170,30 @@ newTotBLen = counttotBLenAll(t1)
 print('diff tot blen '+ str(newTotBLen - oldTotBLen))
 print( 'expected dif = errorRate*nsamples/subtitutionrate ' + str(errorRate*178) ) #the number of sample nodes are 178 in the case I have been testing for. This was the change I would expect in branch lengths.
 countFlagsAll(t1)
+
+#----------------------------------------------
+"""Shorten MAPLE genome length """
+def shortenVect(vect, pos=None, direction=1):
+    if not pos:
+        pos = vect[-1][1]/2 #halve size original
+    pos = int(pos-1)
+    newVect =[]
+    for entry in vect[::direction]:
+        if entry[1] < pos:
+            newVect.append(entry)
+        else:
+            entry= list(entry)
+            entry[1] = pos
+            newVect.append(tuple(entry))
+            return newVect
+
+def shortenGenomeLengthNode(node, pos=None, direction=1):
+    for vects in [ 'probVect',  'probVectTotUp',  'probVectUpLeft',  'probVectUpRight']:
+        if hasattr(node, vects):
+            vect =getattr(node, vects)
+            if vect:
+                vect = shortenVect(vect, pos=pos, direction=direction)
+                setattr(node, vects, vect)
+traverseTopology(t3,shortenGenomeLengthNode)
+
+def shortenGenomeLengthFile(mapleFile, lRef=None):

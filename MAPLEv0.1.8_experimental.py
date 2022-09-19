@@ -3754,7 +3754,7 @@ def traverseTreeForTopologyUpdate(node,mutMatrix,strictTopologyStopRules=strictT
                     topologyUpdated=False
 
                 if topologyUpdated:
-                    totalImprovement=(bestLKdiff-bestCurrentLK)
+                    totalImprovement=(bestLKdiff-bestCurrentLK) #todo: I think it would make more sense to express this as bestLKdiff- originalLK, because now you are comparing it with the case in which you did a bLen update, which is not a fair comparison in my belief.
                     if verbose:
                         print("\n\n In traverseTreeForTopologyUpdate() found SPR move with improvement "+str(totalImprovement))
                     if debugging:
@@ -6931,14 +6931,54 @@ def getRoot(tree):
     while root.up != None:
         root = root.up
     return root
+
+def shortenVect(vect, begin_pos=None, end_pos=None, direction=1):
+    if not begin_pos:
+        begin_pos = 349 #vect[-1][1]/10 #halve size original
+    if not end_pos:
+        end_pos = 351#lRef
+    begin_pos = int(begin_pos-0.45)
+    end_pos= int(end_pos-0.45)
+    newVect =[(4, begin_pos)]
+    for entry in vect:
+        if (entry[1] <= begin_pos):
+            continue
+        elif (entry[1] >= end_pos):
+            while len(newVect):
+                if newVect[-1][0] ==4:
+                    newVect.pop()
+                else:
+                    break
+            newVect.append((4,lRef))
+            return newVect
+        else:
+            newVect.append(entry)
+
+
+
+def shortenGenomeLengthNode(node, pos=None, direction=1):
+    for vects in [ 'probVect',  'probVectTot', 'probVectTotUp',  'probVectUpLeft',  'probVectUpRight']:
+        if hasattr(node, vects):
+            vect =getattr(node, vects)
+            if vect:
+                vect = shortenVect(vect)
+                setattr(node, vects, vect)
+                # if not node.children:
+                #     print(vect)
+
 traverseTreeToOptimizeBranchLengths(getRoot(t1), mutMatrix, mutMatrices=mutMatrices) #remove. at the moment to prevent the branch length leading to S121 to become 1.
 
 """TESTING CODE: CREATING A WORSE TREE AND HOPING FOR SPR DOWNSTREAM"""
 import copy
 import numpy as np
+t0 = copy.deepcopy(t1)
 
-for seed in range(1,100):
+traverseTopology(t1, shortenGenomeLengthNode)
+reCalculateAllGenomeLists(getRoot(t1), mutMatrix, checkExistingAreCorrect=False, useRateVariation=False,mutMatrices=mutMatrices)  # remove               #print("Post-SPR tree: "+createBinaryNewick(root))
 
+branchLengths = (1e-8, 1e-8, 1e-8)
+beforeForcedSPRLK = calculateTreeLikelihood(getRoot(t1), mutMatrix, useRateVariation=False, mutMatrices=mutMatrices)
+for seed in [80]: #range(1,100):
     t2= copy.deepcopy(t1)
     # recalculate LK --> check if correct
     # select some node as best node
@@ -6948,14 +6988,11 @@ for seed in range(1,100):
     subTreeNodeList = traverseTopology3(subTree)  # remove. at the moment to prevent the branch length leading to S121 to become 1.
     if appendedToNode in subTreeNodeList: # subTree should not be appended to a node in the subTree
         continue
-    newRoot = cutAndPasteNode(subTree, appendedToNode, (0.00001, 0.00001, 0.00001), 0, mutMatrix, useRateVariation=False, mutMatrices=mutMatrices)
-    root = getRoot(t1)
+    newRoot = cutAndPasteNode(subTree, appendedToNode, branchLengths, 0, mutMatrix, useRateVariation=False, mutMatrices=mutMatrices)
+    root = getRoot(t2)
     reCalculateAllGenomeLists(root, mutMatrix, checkExistingAreCorrect=True, useRateVariation=False, mutMatrices=mutMatrices)  # remove               #print("Post-SPR tree: "+createBinaryNewick(root))
     oldTreeLK = calculateTreeLikelihood(root, mutMatrix, useRateVariation=False, mutMatrices=mutMatrices)
-    #ORIGINAL appendprobnode value
-    vectUpSubTree = subTree.up.probVectUpLeft if subTree == subTree.up.children[1] else subTree.up.probVectUpRight #todo check if this is the right vector to use
-    originalLK=appendProbNode(vectUpSubTree,subTree.probVect,subTree.dist,mutMatrix,useRateVariation=False,mutMatrices=mutMatrices, node2isleaf=(subTree.children==[]))
-    # NEW appendprobnode value
+
     parentNode = subTree.up
     if parentNode.children[0] == subTree:
         child = 0
@@ -6964,10 +7001,13 @@ for seed in range(1,100):
         child = 1
         vectUp = parentNode.probVectUpLeft
     bestCurrenBLen = subTree.dist
-    bestNodeSoFar, bestLKdiff, bestBranchLengths = findBestParentTopology(parentNode, child, originalLK, bestCurrenBLen, mutMatrix, strictTopologyStopRules=strictTopologyStopRules, allowedFailsTopology=allowedFailsTopology, thresholdLogLKtopology=thresholdLogLKtopology,
-                                                                          useRateVariation=rateVariation,
-                                                                          mutMatrices=mutMatrices)
-    newRoot = cutAndPasteNode(subTree, appendedToNode, bestBranchLengths, LK, mutMatrix,useRateVariation=False, mutMatrices=mutMatrices)
+
+    #ORIGINAL appendprobnode value   #optionally optimize Blen before: #when this is not used newLK is positive for the first case, does that make sense?
+    #bestCurrenBLen=estimateBranchLengthWithDerivative(vectUp,subTree.probVect,mutMatrix,useRateVariation=rateVariation,mutMatrices=mutMatrices, node2isleaf=(subTree.children==[]))
+    originalLK=appendProbNode(vectUp,subTree.probVect,bestCurrenBLen,mutMatrix,useRateVariation=rateVariation,mutMatrices=mutMatrices, node2isleaf=(subTree.children==[]))
+    # NEW appendprobnode value
+    bestNodeSoFar, newLK, bestBranchLengths = findBestParentTopology(parentNode, child, originalLK, bestCurrenBLen, mutMatrix, strictTopologyStopRules=strictTopologyStopRules, allowedFailsTopology=allowedFailsTopology, thresholdLogLKtopology=thresholdLogLKtopology, useRateVariation=rateVariation, mutMatrices=mutMatrices)# search for SPR move on that node at 'subTree'
+    newRoot = cutAndPasteNode(subTree, bestNodeSoFar, bestBranchLengths, newLK, mutMatrix,useRateVariation=False, mutMatrices=mutMatrices)
 
     root= getRoot(t2)
     reCalculateAllGenomeLists(root,mutMatrix, checkExistingAreCorrect=True,useRateVariation=False,mutMatrices=mutMatrices) #remove               #print("Post-SPR tree: "+createBinaryNewick(root))
@@ -6975,12 +7015,62 @@ for seed in range(1,100):
     print(seed)
     print(subTree)
     print(appendedToNode)
-    print(newTreeLK-oldTreeLK)
-    print(newLK-originalLK)
+    if appendedToNode != bestNodeSoFar:
+        print("subtree is appeneded to other node than that it was originally taken from:")
+        print(bestNodeSoFar)
+    print("actual improvement: " + str(newTreeLK-oldTreeLK))
+    print("supposed improvement: " + str(newLK-originalLK))
     if abs((newTreeLK-oldTreeLK) - (newLK-originalLK))>1:
-        print("diference is bigger than 1.0")
-# search for SPR move on that node at 'subTree'
+        print("diference is bigger than 1.0, either the actual improvment is smaller or larger than the supposed improvemnet")
+        if (newTreeLK - oldTreeLK) + 1 < (newLK - originalLK):
+            print("diference is bigger than 1.0, either the actual improvment is smaller or larger than the supposed improvemnet")
+    if newTreeLK + 1 < beforeForcedSPRLK :
+        print("LK has gotten worse than the original tree: new, old:")
+        print(newTreeLK)
+        print(beforeForcedSPRLK)
+    #check if the LK of the tree is equal or better to that before doing the SPR.
 
+#with errors:
+# In cutAndPasteNode() removing subtree from the tree, subtree root partials:
+# [(5, 25), (4, 57), (1, 58), (4, 80), (3, 81), (4, 179), (0, 180), (4, 186), (1, 187), (4, 221), (0, 222), (4, 306), (1, 307), (4, 348), (3, 349), (4, 456), (1, 457), (4, 690), (3, 691), (4, 855), (2, 856), (4, 945), (3, 946), (4, 960), (1, 961), (4, 1266), (0, 1267), (4, 1413), (5, 1414), (4, 1436), (5, 1481)]
+# likelihoods to which it is attached:
+# [(5, 5), (4, 8), (2, 9), (4, 57), (1, 58), (4, 80), (3, 81), (4, 179), (0, 180), (4, 186), (1, 187), (4, 221), (0, 222), (4, 306), (1, 307), (4, 348), (6, 349, [1.2336139915254472e-05, 0.49954358563728135, 6.557106703654755e-07, 0.500443422512133]), (4, 456), (1, 457), (4, 520), (6, 521, [0.5003096937558481, 3.58268724681325e-06, 0.4996825891169774, 4.134439927645592e-06]), (4, 615), (6, 616, [7.25390891247358e-08, 0.9999981275949229, 6.96463358705483e-10, 1.7991695246199856e-06]), (4, 690), (3, 691), (4, 855), (2, 856), (4, 861), (6, 862, [7.253949339448537e-08, 0.9999981107395971, 6.959099467408271e-10, 1.8160249994914466e-06]), (4, 945), (6, 946, [1.3817488687477626e-07, 0.0033288099731677593, 1.098360316322003e-08, 0.9966710408683422]), (4, 960), (1, 961), (4, 1041), (6, 1042, [0.00029289425574509587, 3.1347873941137613e-09, 0.9997070935367032, 9.072764323561272e-09]), (4, 1155), (6, 1156, [0.5003096937558481, 3.58268724681325e-06, 0.4996825891169774, 4.134439927645592e-06]), (4, 1266), (6, 1267, [0.5003096937558481, 3.58268724681325e-06, 0.4996825891169774, 4.134439927645592e-06]), (4, 1413), (5, 1414), (4, 1443), (4, 1444, 0.002062316386627106, False), (5, 1445), (4, 1454), (5, 1455), (4, 1467), (5, 1481)]
+# In cutAndPasteNode() removing subtree from the tree, subtree root partials:
+# [(5, 25), (4, 57), (1, 58), (4, 80), (3, 81), (4, 179), (0, 180), (4, 186), (1, 187), (4, 221), (0, 222), (4, 306), (1, 307), (4, 348), (3, 349), (4, 456), (1, 457), (4, 690), (3, 691), (4, 855), (2, 856), (4, 945), (3, 946), (4, 960), (1, 961), (4, 1266), (0, 1267), (4, 1413), (5, 1414), (4, 1436), (5, 1481)]
+# likelihoods to which it is attached:
+# [(5, 5), (4, 8, 0.001399137536186032, False), (2, 9, 0.001399137536186032, False), (4, 17, 0.001399137536186032, False), (4, 25, 1e-08, False), (4, 57), (1, 58), (4, 80), (3, 81), (4, 179), (0, 180), (4, 186), (1, 187), (4, 221), (0, 222), (4, 306), (1, 307), (4, 348), (6, 349, [6.062244982425829e-07, 0.9983817858667566, 5.050322006704491e-08, 0.001617557405525141]), (4, 456), (1, 457), (4, 690), (3, 691), (4, 855), (2, 856), (4, 915), (6, 916, [3.391654845289658e-07, 0.9975650044128566, 1.565511697507912e-07, 0.002434499870489097]), (4, 918), (6, 919, [6.062244982425829e-07, 0.9983817858667566, 5.050322006704491e-08, 0.001617557405525141]), (4, 960), (1, 961), (4, 1210), (6, 1211, [0.013364120438165655, 0.9866229268446985, 1.1453454279424498e-05, 1.4992628563336996e-06]), (4, 1413), (5, 1414), (4, 1436), (4, 1443, 1e-08, False), (4, 1444, 0.001399137536186032, False), (5, 1445), (4, 1453, 1e-08, False), (4, 1454, 0.001399137536186032, False), (5, 1455), (4, 1467, 0.001399137536186032, False), (5, 1481)]
+# 80
+# S104
+# S106
+# subtree is appeneded to other node than that it was originally taken from:
+# actual improvement: 25.406066410150743
+# supposed improvement: 25.427065203938383
+# LK has gotten worse than the original tree: new, old:
+# -4629.5528664597105
+# -4629.55282513119
+
+# without errors:
+# In cutAndPasteNode() removing subtree from the tree, subtree root partials:
+# [(5, 25), (4, 57), (1, 58), (4, 80), (3, 81), (4, 179), (0, 180), (4, 186), (1, 187), (4, 221), (0, 222), (4, 306), (1, 307), (4, 348), (3, 349), (4, 456), (1, 457), (4, 690), (3, 691), (4, 855), (2, 856), (4, 945), (3, 946), (4, 960), (1, 961), (4, 1266), (0, 1267), (4, 1413), (5, 1414), (4, 1436), (5, 1481)]
+# likelihoods to which it is attached:
+# [(5, 5), (4, 8), (2, 9), (4, 57), (1, 58), (4, 80), (3, 81), (4, 179), (0, 180), (4, 186), (1, 187), (4, 221), (0, 222), (4, 306), (1, 307), (4, 348), (6, 349, [1.2336139915254472e-05, 0.49954358563728135, 6.557106703654755e-07, 0.500443422512133]), (4, 456), (1, 457), (4, 520), (6, 521, [0.5003096937558481, 3.58268724681325e-06, 0.4996825891169774, 4.134439927645592e-06]), (4, 690), (3, 691), (4, 855), (2, 856), (4, 945), (6, 946, [5.5512477129951514e-08, 0.0015858533091860345, 6.555562236380453e-09, 0.9984140846227745]), (4, 960), (1, 961), (4, 1041), (6, 1042, [0.0008408745283214221, 6.82100407586884e-09, 0.9991591070056989, 1.164497566481238e-08]), (4, 1155), (6, 1156, [0.5003096937558481, 3.58268724681325e-06, 0.4996825891169774, 4.134439927645592e-06]), (4, 1266), (6, 1267, [0.5003096937558481, 3.58268724681325e-06, 0.4996825891169774, 4.134439927645592e-06]), (4, 1413), (5, 1414), (4, 1443), (4, 1444, 0.002062316386627106), (5, 1445), (4, 1454), (5, 1455), (4, 1467), (5, 1481)]
+# In cutAndPasteNode() removing subtree from the tree, subtree root partials:
+# [(5, 25), (4, 57), (1, 58), (4, 80), (3, 81), (4, 179), (0, 180), (4, 186), (1, 187), (4, 221), (0, 222), (4, 306), (1, 307), (4, 348), (3, 349), (4, 456), (1, 457), (4, 690), (3, 691), (4, 855), (2, 856), (4, 945), (3, 946), (4, 960), (1, 961), (4, 1266), (0, 1267), (4, 1413), (5, 1414), (4, 1436), (5, 1481)]
+# likelihoods to which it is attached:
+# [(5, 5), (4, 8, 0.001399137536186032), (2, 9, 0.001399137536186032), (4, 17, 0.001399137536186032), (4, 25, 1e-08), (4, 57), (1, 58), (4, 80), (3, 81), (4, 179), (0, 180), (4, 186), (1, 187), (4, 221), (0, 222), (4, 306), (1, 307), (4, 456), (1, 457), (4, 690), (3, 691), (4, 855), (2, 856), (4, 915), (1, 916), (4, 960), (1, 961), (4, 1210), (1, 1211), (4, 1413), (5, 1414), (4, 1436), (4, 1443, 1e-08), (4, 1444, 0.001399137536186032), (5, 1445), (4, 1453, 1e-08), (4, 1454, 0.001399137536186032), (5, 1455), (4, 1467, 0.001399137536186032), (5, 1481)]
+# 80
+# S104 #--> normal, no O entries. origanlly a dist of 0 .
+# S106 #--> normal, no O entries.
+# subtree is appeneded to other node than that it was originally taken from: [S92,]. Has 1 O entry, and one Blen entry.
+# actual improvement: 88.8849341418927
+# supposed improvement: 90.41477542630506 #between length 347 and 551 there is still a difference, with small lengths, not specifically we have:
+# likelihoods to which it was attached before falsely cutting (doesnt matter so much) 6, 349, [1.2336139915254472e-05, 0.49954358563728135, 6.557106703654755e-07, 0.500443422512133]
+# likelihood probvect at the subtree  (3, 349)
+# to which it was attached (4, 1481)
+# to which it is is reattached. (3, 349) (the same as our subtree).
+
+# -3992.2089306319276
+# -3992.208898233922
 
 """TESTING CODE: FORCING A CUT AND PASTE NODE MOVEMENT, AND CALCULATING THE EXPECTED AND ACTUAL IMPROVEMENT OR DECREASE"""
 
