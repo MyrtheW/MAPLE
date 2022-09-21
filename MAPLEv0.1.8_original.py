@@ -4720,6 +4720,8 @@ traverseTreeToOptimizeBranchLengths(getRoot(t1), mutMatrix, mutMatrices=mutMatri
 
 traverseTopology(t1, shortenGenomeLengthNode)
 reCalculateAllGenomeLists(getRoot(t1), mutMatrix, checkExistingAreCorrect=False, useRateVariation=False,mutMatrices=mutMatrices)  # remove               #print("Post-SPR tree: "+createBinaryNewick(root))
+traverseTreeToOptimizeBranchLengths(getRoot(t1), mutMatrix, mutMatrices=mutMatrices) #remove. at the moment to prevent the branch length leading to S121 to become 1.
+reCalculateAllGenomeLists(getRoot(t1), mutMatrix, checkExistingAreCorrect=False, useRateVariation=False,mutMatrices=mutMatrices)  # remove               #print("Post-SPR tree: "+createBinaryNewick(root))
 
 
 """TESTING CODE: CREATING A WORSE TREE AND HOPING FOR SPR DOWNSTREAM"""
