@@ -3984,12 +3984,12 @@ def calculateTreeLikelihood(root,mutMatrix,checkCorrectness=False,useRateVariati
                                                       returnLK=True,useRateVariation=useRateVariation,mutMatrices=mutMatrices,
                                                       node1isleaf=node.children[0].children==[], node2isleaf=node.children[1].children==[])
                 #remove, only for debuggin:
-                for i in [0,1]:
-                    if hasattr(node.children[i], 'name'):
-                        if node.children[i].name in ['S155', 'S104', 'S155', 'S121']:
-                            print(node.children)
-                            print(Lkcontribution)
-                print('x', Lkcontribution)
+                # for i in [0,1]:
+                #     if hasattr(node.children[i], 'name'):
+                #         if node.children[i].name in ['S155', 'S104', 'S155', 'S121']:
+                #             print(node.children)
+                #             print(Lkcontribution)
+                # print('x', Lkcontribution)
                 totalLK+=Lkcontribution
                 if newLower==None:
                     print("Strange, inconsistent lower genome list creation in calculateTreeLikelihood(); "
@@ -4015,7 +4015,7 @@ def calculateTreeLikelihood(root,mutMatrix,checkCorrectness=False,useRateVariati
                 direction=1
     #now add contribution from the root
     totalLK+=findProbRoot(root.probVect)
-    print(findProbRoot(root.probVect))
+    # print(findProbRoot(root.probVect))
     return totalLK
 
 
@@ -6959,14 +6959,14 @@ def getRoot(tree):
         root = root.up
     return root
 
-def shortenVect(vect, begin_pos=None, end_pos=None, direction=1):
-    if not begin_pos:
-        begin_pos = 916#349 #vect[-1][1]/10 #halve size original
-    if not end_pos:
-        end_pos = 919 #351#lRef
-    # begin_pos = int(begin_pos-0.45)
-    # end_pos= int(end_pos-0.45)
-    newVect =[(4, begin_pos-1)]
+def shortenVect(vect):
+    # if not begin_pos:
+    #     begin_pos = 916#349 #vect[-1][1]/10 #halve size original
+    # if not end_pos:
+    #     end_pos = 919 #351#lRef
+    # # begin_pos = int(begin_pos-0.45)
+    # # end_pos= int(end_pos-0.45)
+    newVect =[(4, begin_pos-1)] if begin_pos -1 >0 else []
     for entry in vect:
         if (entry[1] < begin_pos):
             continue
@@ -6980,6 +6980,7 @@ def shortenVect(vect, begin_pos=None, end_pos=None, direction=1):
             return newVect
         else:
             newVect.append(entry)
+    return newVect
 
 
 
@@ -6990,9 +6991,9 @@ def shortenGenomeLengthNode(node, pos=None, direction=1):
             if vect:
                 vect = shortenVect(vect)
                 setattr(node, vects, vect)
-                if not node.children:
-                    print(node.name)
-                    print(vect)
+                # if not node.children:
+                #     print(node.name)
+                #     print(vect)
 
 traverseTreeToOptimizeBranchLengths(getRoot(t1), mutMatrix, mutMatrices=mutMatrices) #remove. at the moment to prevent the branch length leading to S121 to become 1.
 
@@ -7001,90 +7002,105 @@ import copy
 import numpy as np
 t0 = copy.deepcopy(t1)
 
-traverseTopology(t1, shortenGenomeLengthNode)
-#shortening the genomelists notes: when also updating the branch lengths.
-# position 0-lRef : difference is -0.5
-# position 300-800: difference is -1e-5
-# position 0 - 300: difference is +1e-7
-# position 800-lRef : difference is -0.5
-# position 1000-lRef : difference is 0.002
-# position 800-1000 : difference is -0.5
-# position 800-900 : difference is ~0
-# position 900-950 : difference is -0.5
-        # In cutAndPasteNode() removing subtree from the tree, subtree root partials:
-        # [(4, 899), (4, 945), (3, 946), (4, 1481)]
-        # likelihoods to which it is attached:
-        # [(4, 915), (1, 916), (4, 1481)]
-# position 925-950 : difference is -1e-5
-# position 900-925 : difference is 0.5
-# position 915-925 : difference is 0.5
-# position 916-921 : difference is 0.5
-# position 918-921 : difference is ~0
-# position 916-919 : difference is ~0
-# position 916-920 : difference is ~0
-# position 916 :difference is 0!
 
-# shortening the genomelist without also updating the branch lengths
-# position 349: difference is -0.5.
-reCalculateAllGenomeLists(getRoot(t1), mutMatrix, checkExistingAreCorrect=False, useRateVariation=False,mutMatrices=mutMatrices)  # remove               #print("Post-SPR tree: "+createBinaryNewick(root))
-traverseTreeToOptimizeBranchLengths(getRoot(t1), mutMatrix, mutMatrices=mutMatrices) #remove. at the moment to prevent the branch length leading to S121 to become 1.
-reCalculateAllGenomeLists(getRoot(t1), mutMatrix, checkExistingAreCorrect=False, useRateVariation=False,mutMatrices=mutMatrices)  # remove               #print("Post-SPR tree: "+createBinaryNewick(root))
 
-branchLengths = (1e-8, 1e-8, 1e-8)
-beforeForcedSPRLK = calculateTreeLikelihood(getRoot(t1), mutMatrix, useRateVariation=False, mutMatrices=mutMatrices)
-for seed in [80]: #range(1,100):
-    t2= copy.deepcopy(t1)
-    # recalculate LK --> check if correct
-    # select some node as best node
-    nodeList = traverseTopology3(t2, leafsOnly=True)
-    np.random.seed(seed); subTree= np.random.choice(nodeList) # select some subtree
-    np.random.seed(200-seed); appendedToNode = np.random.choice(nodeList)
-    subTreeNodeList = traverseTopology3(subTree)  # remove. at the moment to prevent the branch length leading to S121 to become 1.
-    if appendedToNode in subTreeNodeList: # subTree should not be appended to a node in the subTree
-        continue
-    newRoot = cutAndPasteNode(subTree, appendedToNode, branchLengths, 0, mutMatrix, useRateVariation=False, mutMatrices=mutMatrices)
-    root = getRoot(t2)
-    reCalculateAllGenomeLists(root, mutMatrix, checkExistingAreCorrect=False, useRateVariation=False, mutMatrices=mutMatrices)
-    traverseTreeToOptimizeBranchLengths(root, mutMatrix, mutMatrices=mutMatrices)  # remove. at the moment to prevent the branch length leading to S121 to become 1.
-    reCalculateAllGenomeLists(root, mutMatrix, checkExistingAreCorrect=True, useRateVariation=False, mutMatrices=mutMatrices)  # remove               #print("Post-SPR tree: "+createBinaryNewick(root))
-    oldTreeLK = calculateTreeLikelihood(root, mutMatrix, useRateVariation=False, mutMatrices=mutMatrices)
+def shortenSPR():
+    t1=copy.deepcopy(t0)
+    traverseTopology(t1, shortenGenomeLengthNode)
+    reCalculateAllGenomeLists(getRoot(t1), mutMatrix, checkExistingAreCorrect=False, useRateVariation=False,mutMatrices=mutMatrices)  # remove               #print("Post-SPR tree: "+createBinaryNewick(root))
+    traverseTreeToOptimizeBranchLengths(getRoot(t1), mutMatrix, mutMatrices=mutMatrices) #remove. at the moment to prevent the branch length leading to S121 to become 1.
+    reCalculateAllGenomeLists(getRoot(t1), mutMatrix, checkExistingAreCorrect=False, useRateVariation=False,mutMatrices=mutMatrices)  # remove               #print("Post-SPR tree: "+createBinaryNewick(root))
 
-    parentNode = subTree.up
-    if parentNode.children[0] == subTree:
-        child = 0
-        vectUp = parentNode.probVectUpRight
-    else:
-        child = 1
-        vectUp = parentNode.probVectUpLeft
-    bestCurrenBLen = subTree.dist
+    branchLengths = (1e-8, 1e-8, 1e-8)
+    beforeForcedSPRLK = calculateTreeLikelihood(getRoot(t1), mutMatrix, useRateVariation=False, mutMatrices=mutMatrices)
+    for seed in [1]:# range(1,100): #[80]: #
+        t2= copy.deepcopy(t1)
+        # recalculate LK --> check if correct
+        # select some node as best node
+        nodeList = traverseTopology3(t2, leafsOnly=True)
+        np.random.seed(seed); subTree= np.random.choice(nodeList) # select some subtree
+        np.random.seed(200-seed); appendedToNode = np.random.choice(nodeList)
+        subTreeNodeList = traverseTopology3(subTree)  # remove. at the moment to prevent the branch length leading to S121 to become 1.
+        if appendedToNode in subTreeNodeList: # subTree should not be appended to a node in the subTree
+            continue
+        newRoot = cutAndPasteNode(subTree, appendedToNode, branchLengths, 0, mutMatrix, useRateVariation=False, mutMatrices=mutMatrices)
+        root = getRoot(t2)
+        # reCalculateAllGenomeLists(root, mutMatrix, checkExistingAreCorrect=False, useRateVariation=False, mutMatrices=mutMatrices)
+        # traverseTreeToOptimizeBranchLengths(root, mutMatrix, mutMatrices=mutMatrices)  # remove. at the moment to prevent the branch length leading to S121 to become 1.
+        reCalculateAllGenomeLists(root, mutMatrix, checkExistingAreCorrect=True, useRateVariation=False, mutMatrices=mutMatrices)  # remove               #print("Post-SPR tree: "+createBinaryNewick(root))
+        oldTreeLK = calculateTreeLikelihood(root, mutMatrix, useRateVariation=False, mutMatrices=mutMatrices)
 
-    #ORIGINAL appendprobnode value   #optionally optimize Blen before: #when this is not used newLK is positive for the first case, does that make sense?
-    #bestCurrenBLen=estimateBranchLengthWithDerivative(vectUp,subTree.probVect,mutMatrix,useRateVariation=rateVariation,mutMatrices=mutMatrices, node2isleaf=(subTree.children==[]))
-    originalLK=appendProbNode(vectUp,subTree.probVect,bestCurrenBLen,mutMatrix,useRateVariation=rateVariation,mutMatrices=mutMatrices, node2isleaf=(subTree.children==[]))
-    # NEW appendprobnode value
-    bestNodeSoFar, newLK, bestBranchLengths = findBestParentTopology(parentNode, child, originalLK, bestCurrenBLen, mutMatrix, strictTopologyStopRules=strictTopologyStopRules, allowedFailsTopology=allowedFailsTopology, thresholdLogLKtopology=thresholdLogLKtopology, useRateVariation=rateVariation, mutMatrices=mutMatrices)# search for SPR move on that node at 'subTree'
-    newRoot = cutAndPasteNode(subTree, bestNodeSoFar, bestBranchLengths, newLK, mutMatrix,useRateVariation=False, mutMatrices=mutMatrices)
+        parentNode = subTree.up
+        if parentNode.children[0] == subTree:
+            child = 0
+            vectUp = parentNode.probVectUpRight
+        else:
+            child = 1
+            vectUp = parentNode.probVectUpLeft
+        bestCurrenBLen = subTree.dist
 
-    root= getRoot(t2)
-    reCalculateAllGenomeLists(root,mutMatrix, checkExistingAreCorrect=True,useRateVariation=False,mutMatrices=mutMatrices) #remove               #print("Post-SPR tree: "+createBinaryNewick(root))
-    newTreeLK=calculateTreeLikelihood(root,mutMatrix,useRateVariation=False,mutMatrices=mutMatrices)
-    print(seed)
-    print(subTree)
-    print(appendedToNode)
-    if appendedToNode != bestNodeSoFar:
-        print("subtree is appeneded to other node than that it was originally taken from:")
-        print(bestNodeSoFar)
-    print("actual improvement: " + str(newTreeLK-oldTreeLK))
-    print("supposed improvement: " + str(newLK-originalLK))
-    if abs((newTreeLK-oldTreeLK) - (newLK-originalLK))>1:
-        print("diference is bigger than 1.0, either the actual improvment is smaller or larger than the supposed improvemnet")
-        if (newTreeLK - oldTreeLK) + 1 < (newLK - originalLK):
+        #ORIGINAL appendprobnode value   #optionally optimize Blen before: #when this is not used newLK is positive for the first case, does that make sense?
+        #bestCurrenBLen=estimateBranchLengthWithDerivative(vectUp,subTree.probVect,mutMatrix,useRateVariation=rateVariation,mutMatrices=mutMatrices, node2isleaf=(subTree.children==[]))
+        originalLK=appendProbNode(vectUp,subTree.probVect,bestCurrenBLen,mutMatrix,useRateVariation=rateVariation,mutMatrices=mutMatrices, node2isleaf=(subTree.children==[]))
+        # NEW appendprobnode value
+        bestNodeSoFar, newLK, bestBranchLengths = findBestParentTopology(parentNode, child, originalLK, bestCurrenBLen, mutMatrix, strictTopologyStopRules=strictTopologyStopRules, allowedFailsTopology=allowedFailsTopology, thresholdLogLKtopology=thresholdLogLKtopology, useRateVariation=rateVariation, mutMatrices=mutMatrices)# search for SPR move on that node at 'subTree'
+        newRoot = cutAndPasteNode(subTree, bestNodeSoFar, bestBranchLengths, newLK, mutMatrix,useRateVariation=False, mutMatrices=mutMatrices)
+
+        root= getRoot(t2)
+        reCalculateAllGenomeLists(root,mutMatrix, checkExistingAreCorrect=True,useRateVariation=False,mutMatrices=mutMatrices) #remove               #print("Post-SPR tree: "+createBinaryNewick(root))
+        newTreeLK=calculateTreeLikelihood(root,mutMatrix,useRateVariation=False,mutMatrices=mutMatrices)
+        print(seed)
+        print(subTree)
+        print(appendedToNode)
+        if appendedToNode != bestNodeSoFar:
+            print("subtree is appeneded to other node than that it was originally taken from:")
+            print(bestNodeSoFar)
+        print("actual improvement: " + str(newTreeLK-oldTreeLK))
+        print("supposed improvement: " + str(newLK-originalLK))
+        if abs((newTreeLK-oldTreeLK) - (newLK-originalLK))>1:
             print("diference is bigger than 1.0, either the actual improvment is smaller or larger than the supposed improvemnet")
-    if newTreeLK + 1 < beforeForcedSPRLK :
-        print("LK has gotten worse than the original tree: new, old:")
-        print(newTreeLK)
-        print(beforeForcedSPRLK)
-    #check if the LK of the tree is equal or better to that before doing the SPR.
+            print((newTreeLK-oldTreeLK) - (newLK-originalLK))
+            if abs((newTreeLK - oldTreeLK) - (newLK - originalLK)) > 5:
+                print(
+                    "diference is bigger than 5.0, either the actual improvment is smaller or larger than the supposed improvemnet")
+            if (newTreeLK - oldTreeLK) + 1 < (newLK - originalLK):
+                print("diference is bigger than 1.0, either the actual improvment is smaller or larger than the supposed improvemnet")
+        if newTreeLK + 1 < beforeForcedSPRLK :
+            print("LK has gotten worse than the original tree: new, old:")
+            print(newTreeLK)
+            print(beforeForcedSPRLK)
+        #check if the LK of the tree is equal or better to that before doing the SPR.
+        return (newTreeLK-oldTreeLK) - (newLK-originalLK)
+
+
+# shortening the genomelists notes: when also updating the branch lengths.
+start = 1
+end = lRef
+begin_pos = start
+end_pos = end
+old_discrepency = shortenSPR()
+while end - start - 1 > 0:
+    middle = int((-start + end) / 2)
+
+    # left
+    begin_pos = start
+    end_pos = middle
+    left_discrepency = shortenSPR()
+
+    # right
+    begin_pos = middle
+    end_pos = end
+    right_discrepency = shortenSPR()
+
+    if abs(left_discrepency) < abs(right_discrepency):
+        new_discrepency = right_discrepency
+        start = middle
+    else:
+        new_discrepency = left_discrepency
+        end = middle
+    if abs(new_discrepency) < abs(0.5 * old_discrepency):
+        print('discrepency got smaller')
+    old_discrepency = new_discrepency
 
 #with errors:
 # In cutAndPasteNode() removing subtree from the tree, subtree root partials:
