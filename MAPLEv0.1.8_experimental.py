@@ -182,7 +182,7 @@ class Tree(object):
 
 
 #function to read input newick string
-def readNewick(nwFile,multipleTrees=False,dirtiness=True):
+def readNewick(nwFile,multipleTrees=False,dirtiness=True, divideBranchLengthsBy=1):
     phyloFile=open(nwFile)
     trees=[]
     line=phyloFile.readline()
@@ -227,7 +227,7 @@ def readNewick(nwFile,multipleTrees=False,dirtiness=True):
                     node.name=name
                     name=""
                 if distStr!="":
-                    node.dist=float(distStr)
+                    node.dist=float(distStr)/divideBranchLengthsBy
                     distStr=""
                 newNode=Tree()
                 newNode.minorSequences=[]
@@ -242,7 +242,7 @@ def readNewick(nwFile,multipleTrees=False,dirtiness=True):
                     node.name=name
                     name=""
                 if distStr!="":
-                    node.dist=float(distStr)
+                    node.dist=float(distStr)/divideBranchLengthsBy
                     distStr=""
                 node=node.up
                 index+=1
@@ -286,13 +286,16 @@ def makeTreeBinary(root):
 #Robinson-Foulds distance (1981) using a simplification of the algorithm from Day 1985.
 #this function prepare the data to compare trees to a reference one t1.
 #I split in two functions (the second one is RobinsonFouldsWithDay1985() below) so that I don't have to repeat these steps for the reference tree if I compare to the same reference tree multiple times.
-def prepareTreeComparison(t1,rooted=False,minimumBLen=0.000006):
+def prepareTreeComparison(t1,rooted=False,minimumBLen=0.000006, addRootRFL = False):
     #dictionary of values given to sequence names
     leafNameDict={}
     #list of sequence names sorted according to value
     leafNameDictReverse=[]
     #table containing clusters in the tree
     nodeTable=[]
+    #myrthe: hash table with branch lengths
+    branchLengthDict, leafDistDict = {}, {}
+    sumBranchLengths = 0 # sum of all branch lengths, except from the leaves
     #if comparing as unrooted trees, calculate tot num of leaves (using a postorder traversal), which will become useful later
     if not rooted:
         nLeaves=0
@@ -342,6 +345,7 @@ def prepareTreeComparison(t1,rooted=False,minimumBLen=0.000006):
                 leafCount+=1
                 nextNode=node.up
                 movingFrom=1
+                leafDistDict[node.name] = node.dist
             else:
                 node.exploredChildren=0
                 node.maxSoFar=float("-inf")
@@ -358,6 +362,7 @@ def prepareTreeComparison(t1,rooted=False,minimumBLen=0.000006):
                 node.maxSoFar=lastR
             node.nDescendants+=lastDesc
             if node.exploredChildren==nChildren:
+                sumBranchLengths += node.dist
                 nextNode=node.up
                 movingFrom=1
                 lastL=node.minSoFar
@@ -366,6 +371,8 @@ def prepareTreeComparison(t1,rooted=False,minimumBLen=0.000006):
                 if node==t1:
                     nodeTable[lastR][0]=lastL
                     nodeTable[lastR][1]=lastR
+                    branchLengthDict[(lastL, lastR)] = node.dist  # , node.nDescendants)]
+                    if not rooted or not addRootRFL: sumBranchLengths-=node.dist
                 else:
                     if node.dist>minimumBLen:
                         numBranches+=1
@@ -373,25 +380,29 @@ def prepareTreeComparison(t1,rooted=False,minimumBLen=0.000006):
                             if node==node.up.children[-1]:
                                 nodeTable[lastL][0]=lastL
                                 nodeTable[lastL][1]=lastR
+                                branchLengthDict[(lastL, lastR)] = node.dist #, node.nDescendants)]
                             else:
                                 nodeTable[lastR][0]=lastL
                                 nodeTable[lastR][1]=lastR
+                                branchLengthDict[(lastL, lastR)] = node.dist
                         else: # re-root at leaf 0, so flip the values for the current branch if it contains leaf 0.
                                 flippedL=lastR+1
                                 flippedR=nLeaves-1
                                 nodeTable[flippedL][0]=flippedL
                                 nodeTable[flippedL][1]=flippedR
+                                branchLengthDict[(flippedL, flippedR)] = node.dist
+
             else:
                 nextNode=node.children[node.exploredChildren]
                 movingFrom=0
         node=nextNode
-    return leafNameDict, nodeTable, leafCount, numBranches
+    return leafNameDict, nodeTable, leafCount, numBranches, leafDistDict, branchLengthDict, sumBranchLengths
 
 #Robinson-Foulds distance (1981) using a simplification of the algorithm from Day 1985.
 #this function compares the current tree t2 to a previous one for which prepareTreeComparison() was run.
 # Example usage: leafNameDict, nodeTable, leafCount, numBranches = prepareTreeComparison(phyloTrue,rooted=False)
 # numDiffs, normalisedRF, leafCount, foundBranches, missedBranches, notFoundBranches = RobinsonFouldsWithDay1985(phyloEstimated,leafNameDict,nodeTable,leafCount,numBranches,rooted=False)
-def RobinsonFouldsWithDay1985(t2,leafNameDict,nodeTable,leafCount,numBranches,rooted=False,minimumBLen=0.000006):
+def RobinsonFouldsWithDay1985(t2,leafNameDict,nodeTable,leafCount,numBranches,leafDistDict, branchLengthDict, sumBranchLengths, rooted=False,minimumBLen=0.000006, addRootRFL = False):
     #implementing a non-recursive postorder traversal to check branch existance in the reference tree
     node=t2
     #branches in reference tree that are also in t2
@@ -403,12 +414,15 @@ def RobinsonFouldsWithDay1985(t2,leafNameDict,nodeTable,leafCount,numBranches,ro
     lastR=float("-inf")
     lastDesc=0
     visitedLeaves=0
+    RFL = sumBranchLengths
+    KF = 0
     while node!=t2.up:
         if movingFrom==0: #0 means reaching node from parent, 1 means coming back from a child
             if len(node.children)==0:
                 node.name=(node.name).replace("?","_").replace("&","_")
                 if node.name in leafNameDict:
                     leafNum=leafNameDict[node.name]
+
                 else:
                     print(node.name+" not in reference tree - aborting RF distance")
                     return None, None, None, None, None, None
@@ -418,6 +432,9 @@ def RobinsonFouldsWithDay1985(t2,leafNameDict,nodeTable,leafCount,numBranches,ro
                 nextNode=node.up
                 movingFrom=1
                 visitedLeaves+=1
+                trueDist = leafDistDict[node.name]
+                KF += abs(trueDist- node.dist)
+                # I have not added branch lengths of leaf nodes to sumBranchLengths, so no need for: RFL=- trueDist
             else:
                 node.exploredChildren=0
                 node.maxSoFar=float("-inf")
@@ -436,30 +453,52 @@ def RobinsonFouldsWithDay1985(t2,leafNameDict,nodeTable,leafCount,numBranches,ro
             if node.exploredChildren==nChildren:
                 nextNode=node.up
                 movingFrom=1
-                lastL=node.minSoFar
+                lastL=node.minSoFar #Question what are minsofar and maxsofar?
                 lastR=node.maxSoFar
                 lastDesc=node.nDescendants
                 if node!=t2:
                     if node.dist>minimumBLen:
                         if (lastR+1-lastL)==lastDesc:
                             if rooted or lastL>0:
-                                if nodeTable[lastL][0]==lastL and nodeTable[lastL][1]==lastR:
+                                if nodeTable[lastL][0]==lastL and nodeTable[lastL][1]==lastR: # ISCLUST(X,L,R --> is clust <L,R> or <R, L> part of the original tree?
                                     foundBranches+=1
+                                    trueDist = branchLengthDict[(lastL, lastR)]
+                                    KF += abs(trueDist - node.dist)
+                                    RFL-= trueDist
                                 elif nodeTable[lastR][0]==lastL and nodeTable[lastR][1]==lastR:
                                     foundBranches+=1
+                                    branchLengthDict[(lastR, lastL)] = node.dist
+                                    trueDist = branchLengthDict[(lastL, lastR)]
+                                    KF += abs(trueDist - node.dist)
+                                    RFL-= trueDist
                                 else:
                                     missedBranches+=1
+                                    RFL += node.dist
                             else: # re-root at leaf 0, so flip the values for the current branch if it contains leaf 0.
                                 flippedL=lastR+1
                                 flippedR=leafCount-1
                                 if nodeTable[flippedL][0]==flippedL and nodeTable[flippedL][1]==flippedR:
                                     foundBranches+=1
+                                    trueDist = branchLengthDict[(flippedL, flippedR)]
+                                    KF += abs(trueDist - node.dist)
+                                    RFL -= trueDist
                                 elif nodeTable[flippedR][0]==flippedL and nodeTable[flippedR][1]==flippedR:
                                     foundBranches+=1
+                                    trueDist = branchLengthDict[(flippedL, flippedR)]
+                                    KF += abs(trueDist - node.dist)
+                                    RFL -= trueDist
                                 else:
                                     missedBranches+=1
+                                    RFL += node.dist
                         else:
                             missedBranches+=1
+                            RFL += node.dist
+                elif rooted and addRootRFL: #if rooted take into account difference between roots.
+                    if nodeTable[lastR][0] == lastL and nodeTable[lastR][1] == lastR:
+                        trueDist = branchLengthDict[(lastL, lastR)]
+                        KF += abs(trueDist - node.dist)
+                        RFL -= trueDist
+                    else: RFL += node.dist
             else:
                 nextNode=node.children[node.exploredChildren]
                 movingFrom=0
@@ -470,8 +509,21 @@ def RobinsonFouldsWithDay1985(t2,leafNameDict,nodeTable,leafCount,numBranches,ro
     #first value is number of differences, second value is max number of differences just in case one wants the normalized values;
     #the other values are there just in case on wants more detail.
     numDiffs=((numBranches-foundBranches)+missedBranches)
-    return numDiffs, float(numDiffs)/(2*(leafCount-3)), leafCount, foundBranches, missedBranches, (numBranches-foundBranches)
+    RFL += KF
+    return numDiffs, float(numDiffs)/(2*(leafCount-3)), leafCount, foundBranches, missedBranches, (numBranches-foundBranches), RFL
 
+############################
+# RF distanc new tree
+trueTree = readNewick("data/treeFile_repeat1_100samples.nw", divideBranchLengthsBy=29892)[0]
+leafNameDict, nodeTable, leafCount, numBranches, leafDistDict, branchLengthDict, sumBranchLengths = prepareTreeComparison(trueTree, rooted=True, addRootRFL = False)
+estimatedTree = readNewick(outputFile+"_tree.tree")[0] #simply using t1 did not seem to work...
+numDiffs, normalisedRF, leafCount, foundBranches, missedBranches, notFoundBranches, RFL =\
+    RobinsonFouldsWithDay1985(trueTree, leafNameDict, nodeTable,  leafCount,numBranches, leafDistDict, branchLengthDict, sumBranchLengths, rooted=True, addRootRFL = False)
+print("RF\t" + "normalisedRF\t" + "leaves\t" + "foundBranches\t" + "missedBranches\t" + "notFoundBranches\t" + "RFL\n")
+print(     str(numDiffs) + "\t" + str(normalisedRF) + "\t" + str(leafCount) + "\t" + str(foundBranches) + "\t" + str(  missedBranches) + "\t" + str(notFoundBranches) + "\t" + str(RFL)+ "\n")
+
+# print("totalLK: "+str(totalLK))
+############################
 
 #run Robinson-Foulds distance calculations
 if inputRFtrees!="":
@@ -2661,11 +2713,12 @@ def updateBLen(nodeList,node,mutMatrix,useRateVariation=False,mutMatrices=None):
         vectUp=node.probVectUpLeft
         cNum=1
     bestLength=estimateBranchLengthWithDerivative(vectUp,cNode.probVect,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices, node2isleaf=(cNode.children==[]))
-    cNode.dist=bestLength
-    node.dirty=True
-    cNode.dirty=True
-    nodeList.append((cNode,2))
-    nodeList.append((node,cNum))
+    if bestLength: #cNode.dist != bestLength:
+        cNode.dist=bestLength
+        node.dirty=True
+        cNode.dirty=True
+        nodeList.append((cNode,2))
+        nodeList.append((node,cNum))
 
 
 
@@ -4687,8 +4740,8 @@ def addErrorTerminalNode(node, errorRateOneThird):
     :param errorRateOneThird: the error rate, already divided by 3.
     """
     # simply change ambiguities list --> faster method.
-    print(node.name)
-    print(node.probVect)
+    # print(node.name)
+    # print(node.probVect)
     for entry in node.probVect: # loop over the lower likelihood entries in the genome list
         #for position specific errors; check if errorRate[i] / 3 > thresholdProb: in such case the error rate doesnt have to be considered for the position
         # for position specific errors; check if errorRate[i] > thresholdHighError: store as O vector.
@@ -4706,7 +4759,7 @@ def addErrorTerminalNode(node, errorRateOneThird):
                         entry[-1][i] = errorRateOneThird
                     else:  # if entry[-1][i]==⅓:
                         entry[-1][i] -= errorRateOneThird / 3 # ⅓ - ε/9
-    print(node.probVect)
+    # print(node.probVect)
 
 
 def getFlag(entry, isLeaf=False):
@@ -6509,10 +6562,11 @@ def countEntriesAll(root):
     print("Nucs per node: "+str(float(numNodes[1])/numNodes[0]))
     print("Ns per node: "+str(float(numNodes[3])/numNodes[0]))
 
-def counttotBLenAll(root):
+def counttotBLenAll(tree):
     """
     Traverse the tree to count the sum of all the branch lengths.
     """
+    root = getRoot(tree)
     global totBLen
     totBLen = 0
     def counttotBLen(node):
@@ -6520,7 +6574,7 @@ def counttotBLenAll(root):
         totBLen += node.dist
     traverseTopology(root, counttotBLen)
     print("Tot branch length: "+str(totBLen))
-    return totBLen
+    return totBLen - root.dist
 
 def countFlagsAll(root):
     """
@@ -6747,7 +6801,6 @@ the result will be the same as a tree without the incorporation of flags or usua
 
 errorRate = args.errorRate
 if errorRate:
-    errorRate = 0.005
     activateErrorFunctions(activate=True, activatefirsttime=True) #replace normal functions with pointers to their error rate variants.
     if debugging: print("start recalculating with ErrorRate")
     reCalculateWithErrors(t1, mutMatrix, useRateVariation=rateVariation,mutMatrices=mutMatrices,firstTimeError=True)#, errorRate= errorRate)
@@ -6756,202 +6809,6 @@ if errorRate:
 
 #--------------------------------------------
 
-def findBestParentTopologyDebugging(appendedToNode, bestBranchLengths, node,child,bestLKdiff,removedBLen,mutMatrix,compensanteForBranchLengthChange =False, strictTopologyStopRules=strictTopologyStopRules,allowedFailsTopology=allowedFailsTopology,thresholdLogLKtopology=thresholdLogLKtopology,useRateVariation=False,mutMatrices=None):
-    """Force a placement of the 'node' to the appendedToNode. Force it with bestBranchLengths Tuple"""
-    #currentLK = bestLKdiff
-    bestNode=node
-    bestNodes=[]
-    nodesToVisit=[]
-    removedPartials=node.children[child].probVect
-    removedPartialsIsLeaf = (node.children[child].children==[])
-    if node.up!=None:
-        if node.up.children[0]==node:
-            childUp=1
-            vectUpUp=node.up.probVectUpRight
-        else:
-            childUp=2
-            vectUpUp=node.up.probVectUpLeft
-        #the list nodesToVisit keeps trak of the nodes of the tree we wil need to traverse, (first element of each entry),
-        # the direction from where we are visitng them (0=from parent, and 1,2=from one of the children),
-        # an updated genome list from the direction where we come from (taking into account the removal of the given subtree),
-        # a branch length value separating the node from this updated genome list (useful for the fact that the removal of the subtree changes the branch length at the removal node),
-        # a flag that says if the updated genome list passed needs still updating, or if it has become identical to the pre-existing genome list in the tree (which usually happens after a while),
-        # the likelihood cost of appending at the last node encountered in this direction,
-        # a number of consecutively failed traversal steps since the last improvement found (if this number goes beyond a threshold, traversal in the considered direction might be halted).
-        nodesToVisit.append((node.up,childUp,node.children[1-child].probVect,node.children[1-child].dist+node.dist,True,bestLKdiff,0, node.children[1-child].children==[]))
-        nodesToVisit.append((node.children[1-child],0,vectUpUp,node.children[1-child].dist+node.dist,True,bestLKdiff,0, False))
-    else:
-        # case node is root
-        if node.children[1-child].children: # case there is only one sample outside of the subtree doesn't need to be considered
-            child1=node.children[1-child].children[0]
-            child2=node.children[1-child].children[1]
-            vectUp1=rootVector(child2.probVect,child2.dist,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,
-                               isLeaf=child2.children==[])
-            nodesToVisit.append((child1,0,vectUp1,child1.dist,True,bestLKdiff,0, False)) #isLeaf is false for vectup1
-            vectUp2=rootVector(child1.probVect,child1.dist,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,
-                               isLeaf=child1.children==[])
-            nodesToVisit.append((child2,0,vectUp2,child2.dist,True,bestLKdiff,0, False)) #isLeaf is false
-
-    while nodesToVisit:
-        t1,direction,passedPartials,distance,needsUpdating,lastLK,failedPasses, passedPartialsIsLeaf=nodesToVisit.pop()
-        if direction==0:
-            #consider the case we are moving from a parent to a child
-            if t1.dist and (not (t1.up==node or t1.up==None)):
-                if needsUpdating:
-                    midTot=mergeVectorsUpDown(passedPartials,distance/2,t1.probVect,distance/2,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,
-                                              node1isleaf=False, #Because it is a vectup, mergeVectorsUpDown
-                                              node2isleaf=t1.children==[])
-
-                    if not areVectorsDifferent(midTot,t1.probVectTotUp):
-                        needsUpdating=False
-                else:
-                    midTot=t1.probVectTotUp
-                if midTot==None:
-                    continue
-
-
-            #keep crawling down into children nodes unless the stop criteria for the traversal are satisfied.
-
-            if t1.children:
-                #if (failedPasses<=allowedFailsTopology or nodeProb>(bestLKdiff-thresholdLogLKtopology) ) and len(t1.children)==2:
-                child=t1.children[0]
-                otherChild=t1.children[1]
-                if needsUpdating:
-                    vectUpRight=mergeVectorsUpDown(passedPartials,distance,otherChild.probVect,otherChild.dist,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,
-                                                   node2isleaf=otherChild.children==[] )
-                else:
-                    vectUpRight=t1.probVectUpRight
-                if vectUpRight!=None:
-                    nodesToVisit.append((child,0,vectUpRight,child.dist,needsUpdating,bestLKdiff,failedPasses, False))
-                child=t1.children[1]
-                otherChild=t1.children[0]
-                if needsUpdating:
-                    vectUpLeft=mergeVectorsUpDown(passedPartials,distance,otherChild.probVect,otherChild.dist,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,
-                                                  node2isleaf=otherChild.children == [])
-                else:
-                    vectUpLeft=t1.probVectUpLeft
-                if vectUpLeft!=None:
-                    nodesToVisit.append((child,0,vectUpLeft,child.dist,needsUpdating,bestLKdiff,failedPasses, False)) #no leaf
-
-        else: #case when crawling up from child to parent
-            otherChild=t1.children[2-direction]
-            midBottom=None
-            if t1.dist and t1.up!=None: #try appending mid-branch
-                if needsUpdating:
-                    midBottom=mergeVectors(otherChild.probVect,otherChild.dist,passedPartials,distance,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,
-                                           node1isleaf=otherChild.children==[], node2isleaf= passedPartialsIsLeaf)
-                    if midBottom==None:
-                        continue
-                    if t1==t1.up.children[0]:
-                        vectUp=t1.up.probVectUpRight
-                    else:
-                        vectUp=t1.up.probVectUpLeft
-                    midTot=mergeVectorsUpDown(vectUp,t1.dist/2,midBottom,t1.dist/2,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,
-                                              node2isleaf=False) #midBottom is not from a leaf node! it has just been created above.
-                    if not areVectorsDifferent(midTot,t1.probVectTotUp):
-                        needsUpdating=False
-                else:
-                    midTot=t1.probVectTotUp
-                if midTot==None:
-                    continue
-
-
-
-            if True:
-                # keep crawling up into parent and sibling node
-                if t1.up!=None: #case the node is not the root
-                    #first pass the crawling down the other child
-                    if t1==t1.up.children[0]:
-                        upChild=0
-                        if needsUpdating:
-                            vectUpUp=t1.up.probVectUpRight
-                    else:
-                        upChild=1
-                        if needsUpdating:
-                            vectUpUp=t1.up.probVectUpLeft
-                    if needsUpdating:
-                        vectUp=mergeVectorsUpDown(vectUpUp,t1.dist,passedPartials,distance,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices, node2isleaf=passedPartialsIsLeaf)
-                    else:
-                        if direction==1:
-                            vectUp=t1.probVectUpLeft
-                        else:
-                            vectUp=t1.probVectUpRight
-
-                    if vectUp==None:
-                        continue
-                    else:
-                        nodesToVisit.append((otherChild,0,vectUp,otherChild.dist,needsUpdating,bestLKdiff,failedPasses, False))
-                    #now pass the crawling up to the parent node
-                    if needsUpdating:
-                        if midBottom==None:
-                            midBottom=mergeVectors(otherChild.probVect,otherChild.dist,passedPartials,distance,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,
-                                                   node1isleaf=otherChild.children==[], node2isleaf=passedPartialsIsLeaf )#, node1isleaf= node1isleaf,node2isleaf=node2isleaf )
-                            if midBottom==None:
-                                continue
-                    else:
-                        midBottom=t1.probVect
-                    nodesToVisit.append((t1.up,upChild+1,midBottom,t1.dist,needsUpdating,bestLKdiff,failedPasses, False))
-                #now consider case of root node
-                else:
-                    if needsUpdating:
-                        vectUp=rootVector(passedPartials,distance,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices, isLeaf=passedPartialsIsLeaf)
-                    else:
-                        if direction==1:
-                            vectUp=t1.probVectUpLeft
-                        else:
-                            vectUp=t1.probVectUpRight
-                    nodesToVisit.append((otherChild,0,vectUp,otherChild.dist,needsUpdating,bestLKdiff,failedPasses, False))
-
-    #Initial exploration is finished.
-    #Now, for each branch within threshold likelihood distance from the best found, optimize branch lengths.
-    #Use optimized scores to select final best branch
-
-    # IMPROVMENT ESTIMATE OF NEW NODE
-    t1=appendedToNode
-
-    if t1==t1.up.children[0]:
-        upVect=t1.up.probVectUpRight
-    else:
-        upVect=t1.up.probVectUpLeft
-    downVect=t1.probVect
-    distance=t1.dist
-    #midTot=t1.probVectTotUp
-    downVectIsLeaf = (t1.children==[])
-
-
-    bestTopLength,bestBottomLength,bestAppendingLength = bestBranchLengths
-    #now optimize appending location
-    # midLowerVector=mergeVectors(downVect,distance/2,removedPartials,bestAppendingLength,mutMatrix,
-    #                             node1isleaf=downVectIsLeaf,node2isleaf=removedPartialsIsLeaf) # When changing node1isleaf or node2isleaf, it remains 0.
-    # midTopVector=mergeVectorsUpDown(upVect,bestTopLength,removedPartials,bestAppendingLength,mutMatrix,
-    #                                 node2isleaf=removedPartialsIsLeaf)
-    newMidVector=mergeVectorsUpDown(upVect,bestTopLength,downVect,bestBottomLength,mutMatrix,node2isleaf=downVectIsLeaf)
-    appendingCost=appendProbNode(newMidVector,removedPartials,bestAppendingLength,mutMatrix, node2isleaf=removedPartialsIsLeaf) #shouldn't rate variation be used here and the original one?
-
-    if compensanteForBranchLengthChange:  # if wanted, do a more thorough examination of the appending cost, taking into account a possible change in branch length of the branch on which to be appended.
-        initialCost = appendProbNode(upVect, downVect, distance, mutMatrix, node2isleaf=downVectIsLeaf)
-        newPartialCost = appendProbNode(upVect, downVect, bestBottomLength + bestTopLength, mutMatrix,
-                                        node2isleaf=downVectIsLeaf)
-        appendingCost = appendingCost + newPartialCost - initialCost
-    return bestNode, appendingCost, bestBranchLengths
-
-
-def traverseTopology3(node, leafsOnly=False):
-    """
-    Traverse a topology and perform a function
-    :param node: the root node.
-    :param function: the function to be performed at every node. It should take only 'node' as argument
-    :param leafsOnly: If True, the function will only be performed at the leaf node
-    """
-    nodesToVisit=[node]
-    nodesToVisit2 =[]
-    while nodesToVisit:
-        newNode=nodesToVisit.pop()
-        for c in newNode.children:
-            nodesToVisit.append(c)
-        if not newNode.children or not leafsOnly:
-            nodesToVisit2.append(newNode)
-    return nodesToVisit2
 
 def getRoot(tree):
     root = tree
@@ -6960,12 +6817,6 @@ def getRoot(tree):
     return root
 
 def shortenVect(vect):
-    # if not begin_pos:
-    #     begin_pos = 916#349 #vect[-1][1]/10 #halve size original
-    # if not end_pos:
-    #     end_pos = 919 #351#lRef
-    # # begin_pos = int(begin_pos-0.45)
-    # # end_pos= int(end_pos-0.45)
     newVect =[(4, begin_pos-1)] if begin_pos -1 >0 else []
     for entry in vect:
         if (entry[1] < begin_pos):
@@ -6982,8 +6833,6 @@ def shortenVect(vect):
             newVect.append(entry)
     return newVect
 
-
-
 def shortenGenomeLengthNode(node, pos=None, direction=1):
     for vects in [ 'probVect',  'probVectTot', 'probVectTotUp',  'probVectUpLeft',  'probVectUpRight']:
         if hasattr(node, vects):
@@ -6991,213 +6840,7 @@ def shortenGenomeLengthNode(node, pos=None, direction=1):
             if vect:
                 vect = shortenVect(vect)
                 setattr(node, vects, vect)
-                # if not node.children:
-                #     print(node.name)
-                #     print(vect)
 
-traverseTreeToOptimizeBranchLengths(getRoot(t1), mutMatrix, mutMatrices=mutMatrices) #remove. at the moment to prevent the branch length leading to S121 to become 1.
-
-"""TESTING CODE: CREATING A WORSE TREE AND HOPING FOR SPR DOWNSTREAM"""
-import copy
-import numpy as np
-t0 = copy.deepcopy(t1)
-
-
-
-def shortenSPR():
-    t1=copy.deepcopy(t0)
-    traverseTopology(t1, shortenGenomeLengthNode)
-    reCalculateAllGenomeLists(getRoot(t1), mutMatrix, checkExistingAreCorrect=False, useRateVariation=False,mutMatrices=mutMatrices)  # remove               #print("Post-SPR tree: "+createBinaryNewick(root))
-    traverseTreeToOptimizeBranchLengths(getRoot(t1), mutMatrix, mutMatrices=mutMatrices) #remove. at the moment to prevent the branch length leading to S121 to become 1.
-    reCalculateAllGenomeLists(getRoot(t1), mutMatrix, checkExistingAreCorrect=False, useRateVariation=False,mutMatrices=mutMatrices)  # remove               #print("Post-SPR tree: "+createBinaryNewick(root))
-
-    branchLengths = (1e-8, 1e-8, 1e-8)
-    beforeForcedSPRLK = calculateTreeLikelihood(getRoot(t1), mutMatrix, useRateVariation=False, mutMatrices=mutMatrices)
-    for seed in [1]:# range(1,100): #[80]: #
-        t2= copy.deepcopy(t1)
-        # recalculate LK --> check if correct
-        # select some node as best node
-        nodeList = traverseTopology3(t2, leafsOnly=True)
-        np.random.seed(seed); subTree= np.random.choice(nodeList) # select some subtree
-        np.random.seed(200-seed); appendedToNode = np.random.choice(nodeList)
-        subTreeNodeList = traverseTopology3(subTree)  # remove. at the moment to prevent the branch length leading to S121 to become 1.
-        if appendedToNode in subTreeNodeList: # subTree should not be appended to a node in the subTree
-            continue
-        newRoot = cutAndPasteNode(subTree, appendedToNode, branchLengths, 0, mutMatrix, useRateVariation=False, mutMatrices=mutMatrices)
-        root = getRoot(t2)
-        # reCalculateAllGenomeLists(root, mutMatrix, checkExistingAreCorrect=False, useRateVariation=False, mutMatrices=mutMatrices)
-        # traverseTreeToOptimizeBranchLengths(root, mutMatrix, mutMatrices=mutMatrices)  # remove. at the moment to prevent the branch length leading to S121 to become 1.
-        reCalculateAllGenomeLists(root, mutMatrix, checkExistingAreCorrect=True, useRateVariation=False, mutMatrices=mutMatrices)  # remove               #print("Post-SPR tree: "+createBinaryNewick(root))
-        oldTreeLK = calculateTreeLikelihood(root, mutMatrix, useRateVariation=False, mutMatrices=mutMatrices)
-
-        parentNode = subTree.up
-        if parentNode.children[0] == subTree:
-            child = 0
-            vectUp = parentNode.probVectUpRight
-        else:
-            child = 1
-            vectUp = parentNode.probVectUpLeft
-        bestCurrenBLen = subTree.dist
-
-        #ORIGINAL appendprobnode value   #optionally optimize Blen before: #when this is not used newLK is positive for the first case, does that make sense?
-        #bestCurrenBLen=estimateBranchLengthWithDerivative(vectUp,subTree.probVect,mutMatrix,useRateVariation=rateVariation,mutMatrices=mutMatrices, node2isleaf=(subTree.children==[]))
-        originalLK=appendProbNode(vectUp,subTree.probVect,bestCurrenBLen,mutMatrix,useRateVariation=rateVariation,mutMatrices=mutMatrices, node2isleaf=(subTree.children==[]))
-        # NEW appendprobnode value
-        bestNodeSoFar, newLK, bestBranchLengths = findBestParentTopology(parentNode, child, originalLK, bestCurrenBLen, mutMatrix, strictTopologyStopRules=strictTopologyStopRules, allowedFailsTopology=allowedFailsTopology, thresholdLogLKtopology=thresholdLogLKtopology, useRateVariation=rateVariation, mutMatrices=mutMatrices)# search for SPR move on that node at 'subTree'
-        newRoot = cutAndPasteNode(subTree, bestNodeSoFar, bestBranchLengths, newLK, mutMatrix,useRateVariation=False, mutMatrices=mutMatrices)
-
-        root= getRoot(t2)
-        reCalculateAllGenomeLists(root,mutMatrix, checkExistingAreCorrect=True,useRateVariation=False,mutMatrices=mutMatrices) #remove               #print("Post-SPR tree: "+createBinaryNewick(root))
-        newTreeLK=calculateTreeLikelihood(root,mutMatrix,useRateVariation=False,mutMatrices=mutMatrices)
-        print(seed)
-        print(subTree)
-        print(appendedToNode)
-        if appendedToNode != bestNodeSoFar:
-            print("subtree is appeneded to other node than that it was originally taken from:")
-            print(bestNodeSoFar)
-        print("actual improvement: " + str(newTreeLK-oldTreeLK))
-        print("supposed improvement: " + str(newLK-originalLK))
-        if abs((newTreeLK-oldTreeLK) - (newLK-originalLK))>1:
-            print("diference is bigger than 1.0, either the actual improvment is smaller or larger than the supposed improvemnet")
-            print((newTreeLK-oldTreeLK) - (newLK-originalLK))
-            if abs((newTreeLK - oldTreeLK) - (newLK - originalLK)) > 5:
-                print(
-                    "diference is bigger than 5.0, either the actual improvment is smaller or larger than the supposed improvemnet")
-            if (newTreeLK - oldTreeLK) + 1 < (newLK - originalLK):
-                print("diference is bigger than 1.0, either the actual improvment is smaller or larger than the supposed improvemnet")
-        if newTreeLK + 1 < beforeForcedSPRLK :
-            print("LK has gotten worse than the original tree: new, old:")
-            print(newTreeLK)
-            print(beforeForcedSPRLK)
-        #check if the LK of the tree is equal or better to that before doing the SPR.
-        return (newTreeLK-oldTreeLK) - (newLK-originalLK)
-
-
-# shortening the genomelists notes: when also updating the branch lengths.
-start = 1
-end = lRef
-begin_pos = start
-end_pos = end
-old_discrepency = shortenSPR()
-while end - start - 1 > 0:
-    middle = int((-start + end) / 2)
-
-    # left
-    begin_pos = start
-    end_pos = middle
-    left_discrepency = shortenSPR()
-
-    # right
-    begin_pos = middle
-    end_pos = end
-    right_discrepency = shortenSPR()
-
-    if abs(left_discrepency) < abs(right_discrepency):
-        new_discrepency = right_discrepency
-        start = middle
-    else:
-        new_discrepency = left_discrepency
-        end = middle
-    if abs(new_discrepency) < abs(0.5 * old_discrepency):
-        print('discrepency got smaller')
-    old_discrepency = new_discrepency
-
-#with errors:
-# In cutAndPasteNode() removing subtree from the tree, subtree root partials:
-# [(5, 25), (4, 57), (1, 58), (4, 80), (3, 81), (4, 179), (0, 180), (4, 186), (1, 187), (4, 221), (0, 222), (4, 306), (1, 307), (4, 348), (3, 349), (4, 456), (1, 457), (4, 690), (3, 691), (4, 855), (2, 856), (4, 945), (3, 946), (4, 960), (1, 961), (4, 1266), (0, 1267), (4, 1413), (5, 1414), (4, 1436), (5, 1481)]
-# likelihoods to which it is attached:
-# [(5, 5), (4, 8), (2, 9), (4, 57), (1, 58), (4, 80), (3, 81), (4, 179), (0, 180), (4, 186), (1, 187), (4, 221), (0, 222), (4, 306), (1, 307), (4, 348), (6, 349, [1.2336139915254472e-05, 0.49954358563728135, 6.557106703654755e-07, 0.500443422512133]), (4, 456), (1, 457), (4, 520), (6, 521, [0.5003096937558481, 3.58268724681325e-06, 0.4996825891169774, 4.134439927645592e-06]), (4, 615), (6, 616, [7.25390891247358e-08, 0.9999981275949229, 6.96463358705483e-10, 1.7991695246199856e-06]), (4, 690), (3, 691), (4, 855), (2, 856), (4, 861), (6, 862, [7.253949339448537e-08, 0.9999981107395971, 6.959099467408271e-10, 1.8160249994914466e-06]), (4, 945), (6, 946, [1.3817488687477626e-07, 0.0033288099731677593, 1.098360316322003e-08, 0.9966710408683422]), (4, 960), (1, 961), (4, 1041), (6, 1042, [0.00029289425574509587, 3.1347873941137613e-09, 0.9997070935367032, 9.072764323561272e-09]), (4, 1155), (6, 1156, [0.5003096937558481, 3.58268724681325e-06, 0.4996825891169774, 4.134439927645592e-06]), (4, 1266), (6, 1267, [0.5003096937558481, 3.58268724681325e-06, 0.4996825891169774, 4.134439927645592e-06]), (4, 1413), (5, 1414), (4, 1443), (4, 1444, 0.002062316386627106, False), (5, 1445), (4, 1454), (5, 1455), (4, 1467), (5, 1481)]
-# In cutAndPasteNode() removing subtree from the tree, subtree root partials:
-# [(5, 25), (4, 57), (1, 58), (4, 80), (3, 81), (4, 179), (0, 180), (4, 186), (1, 187), (4, 221), (0, 222), (4, 306), (1, 307), (4, 348), (3, 349), (4, 456), (1, 457), (4, 690), (3, 691), (4, 855), (2, 856), (4, 945), (3, 946), (4, 960), (1, 961), (4, 1266), (0, 1267), (4, 1413), (5, 1414), (4, 1436), (5, 1481)]
-# likelihoods to which it is attached:
-# [(5, 5), (4, 8, 0.001399137536186032, False), (2, 9, 0.001399137536186032, False), (4, 17, 0.001399137536186032, False), (4, 25, 1e-08, False), (4, 57), (1, 58), (4, 80), (3, 81), (4, 179), (0, 180), (4, 186), (1, 187), (4, 221), (0, 222), (4, 306), (1, 307), (4, 348), (6, 349, [6.062244982425829e-07, 0.9983817858667566, 5.050322006704491e-08, 0.001617557405525141]), (4, 456), (1, 457), (4, 690), (3, 691), (4, 855), (2, 856), (4, 915), (6, 916, [3.391654845289658e-07, 0.9975650044128566, 1.565511697507912e-07, 0.002434499870489097]), (4, 918), (6, 919, [6.062244982425829e-07, 0.9983817858667566, 5.050322006704491e-08, 0.001617557405525141]), (4, 960), (1, 961), (4, 1210), (6, 1211, [0.013364120438165655, 0.9866229268446985, 1.1453454279424498e-05, 1.4992628563336996e-06]), (4, 1413), (5, 1414), (4, 1436), (4, 1443, 1e-08, False), (4, 1444, 0.001399137536186032, False), (5, 1445), (4, 1453, 1e-08, False), (4, 1454, 0.001399137536186032, False), (5, 1455), (4, 1467, 0.001399137536186032, False), (5, 1481)]
-# 80
-# S104
-# S106
-# subtree is appeneded to other node than that it was originally taken from:
-# actual improvement: 25.406066410150743
-# supposed improvement: 25.427065203938383
-# LK has gotten worse than the original tree: new, old:
-# -4629.5528664597105
-# -4629.55282513119
-
-# without errors:
-# In cutAndPasteNode() removing subtree from the tree, subtree root partials:
-# [(5, 25), (4, 57), (1, 58), (4, 80), (3, 81), (4, 179), (0, 180), (4, 186), (1, 187), (4, 221), (0, 222), (4, 306), (1, 307), (4, 348), (3, 349), (4, 456), (1, 457), (4, 690), (3, 691), (4, 855), (2, 856), (4, 945), (3, 946), (4, 960), (1, 961), (4, 1266), (0, 1267), (4, 1413), (5, 1414), (4, 1436), (5, 1481)]
-# likelihoods to which it is attached:
-# [(5, 5), (4, 8), (2, 9), (4, 57), (1, 58), (4, 80), (3, 81), (4, 179), (0, 180), (4, 186), (1, 187), (4, 221), (0, 222), (4, 306), (1, 307), (4, 348), (6, 349, [1.2336139915254472e-05, 0.49954358563728135, 6.557106703654755e-07, 0.500443422512133]), (4, 456), (1, 457), (4, 520), (6, 521, [0.5003096937558481, 3.58268724681325e-06, 0.4996825891169774, 4.134439927645592e-06]), (4, 690), (3, 691), (4, 855), (2, 856), (4, 945), (6, 946, [5.5512477129951514e-08, 0.0015858533091860345, 6.555562236380453e-09, 0.9984140846227745]), (4, 960), (1, 961), (4, 1041), (6, 1042, [0.0008408745283214221, 6.82100407586884e-09, 0.9991591070056989, 1.164497566481238e-08]), (4, 1155), (6, 1156, [0.5003096937558481, 3.58268724681325e-06, 0.4996825891169774, 4.134439927645592e-06]), (4, 1266), (6, 1267, [0.5003096937558481, 3.58268724681325e-06, 0.4996825891169774, 4.134439927645592e-06]), (4, 1413), (5, 1414), (4, 1443), (4, 1444, 0.002062316386627106), (5, 1445), (4, 1454), (5, 1455), (4, 1467), (5, 1481)]
-# In cutAndPasteNode() removing subtree from the tree, subtree root partials:
-# [(5, 25), (4, 57), (1, 58), (4, 80), (3, 81), (4, 179), (0, 180), (4, 186), (1, 187), (4, 221), (0, 222), (4, 306), (1, 307), (4, 348), (3, 349), (4, 456), (1, 457), (4, 690), (3, 691), (4, 855), (2, 856), (4, 945), (3, 946), (4, 960), (1, 961), (4, 1266), (0, 1267), (4, 1413), (5, 1414), (4, 1436), (5, 1481)]
-# likelihoods to which it is attached:
-# [(5, 5), (4, 8, 0.001399137536186032), (2, 9, 0.001399137536186032), (4, 17, 0.001399137536186032), (4, 25, 1e-08), (4, 57), (1, 58), (4, 80), (3, 81), (4, 179), (0, 180), (4, 186), (1, 187), (4, 221), (0, 222), (4, 306), (1, 307), (4, 456), (1, 457), (4, 690), (3, 691), (4, 855), (2, 856), (4, 915), (1, 916), (4, 960), (1, 961), (4, 1210), (1, 1211), (4, 1413), (5, 1414), (4, 1436), (4, 1443, 1e-08), (4, 1444, 0.001399137536186032), (5, 1445), (4, 1453, 1e-08), (4, 1454, 0.001399137536186032), (5, 1455), (4, 1467, 0.001399137536186032), (5, 1481)]
-# 80
-# S104 #--> normal, no O entries. origanlly a dist of 0 .
-# S106 #--> normal, no O entries.
-# subtree is appeneded to other node than that it was originally taken from: [S92,]. Has 1 O entry, and one Blen entry.
-# actual improvement: 88.8849341418927
-# supposed improvement: 90.41477542630506 #between length 347 and 551 there is still a difference, with small lengths, not specifically we have:
-# likelihoods to which it was attached before falsely cutting (doesnt matter so much) 6, 349, [1.2336139915254472e-05, 0.49954358563728135, 6.557106703654755e-07, 0.500443422512133]
-# likelihood probvect at the subtree  (3, 349)
-# to which it was attached (4, 1481)
-# to which it is is reattached. (3, 349) (the same as our subtree).
-
-# -3992.2089306319276
-# -3992.208898233922
-
-"""TESTING CODE: FORCING A CUT AND PASTE NODE MOVEMENT, AND CALCULATING THE EXPECTED AND ACTUAL IMPROVEMENT OR DECREASE"""
-# problem of this is that I had adapted Nicola's original functions to achieve this. To rule out making any possible mistakes by changes I make,
-
- # remove               #print("Post-SPR tree: "+createBinaryNewick(root))
-for seed in range(1,100):
-
-    t2= copy.deepcopy(t1)
-    # recalculate LK --> check if correct
-    # select some node as best node
-    nodeList = traverseTopology3(t2, leafsOnly=True)
-    np.random.seed(seed); subTree= np.random.choice(nodeList) # select some subtree
-    np.random.seed(200-seed); appendedToNode = np.random.choice(nodeList)
-    subTreeNodeList = traverseTopology3(subTree)  # remove. at the moment to prevent the branch length leading to S121 to become 1.
-    if appendedToNode in subTreeNodeList: # subTree should not be appended to a node in the subTree
-        continue
-
-    bestBranchLengths = (appendedToNode.dist/2, appendedToNode.dist/2, subTree.dist) # select some branch lengths as best branch lengths
-    if not subTree.dist or not appendedToNode.dist: # should at least not both have 0 distance, disturbs branch length part.
-        bestBranchLengths = (0.00000001, 0.00000001, 0.00000001) #todo --> this induces the LK difference to rise above 0.# continue
-
-    root = getRoot(t1)
-    reCalculateAllGenomeLists(root,mutMatrix, checkExistingAreCorrect=True,useRateVariation=False,mutMatrices=mutMatrices) #remove               #print("Post-SPR tree: "+createBinaryNewick(root))
-    oldTreeLK=calculateTreeLikelihood(root,mutMatrix,useRateVariation=False,mutMatrices=mutMatrices)
-
-    # calculate improvement
-
-    #ORIGINAL appendprobnode value
-    vectUpSubTree = subTree.up.probVectUpLeft if subTree == subTree.up.children[1] else subTree.up.probVectUpRight #todo check if this is the right vector to use
-    originalLK=appendProbNode(vectUpSubTree,subTree.probVect,subTree.dist,mutMatrix,useRateVariation=False,mutMatrices=mutMatrices, node2isleaf=(subTree.children==[]))
-
-    #NEW appendprobnode value
-    parentNode = subTree.up
-    if parentNode.children[0] == subTree:
-        child = 0
-        vectUp = parentNode.probVectUpRight
-    else:
-        child = 1
-        vectUp = parentNode.probVectUpLeft
-    bestNode, newLK, bestBranchLengths = findBestParentTopologyDebugging(appendedToNode, bestBranchLengths, parentNode, child,originalLK,subTree.dist,mutMatrix,
-                                                                         compensanteForBranchLengthChange=True,strictTopologyStopRules=True,allowedFailsTopology=1,thresholdLogLKtopology=40,useRateVariation=False,mutMatrices=mutMatrices)
-    #what does allowsfailledtopology mean?
-    LK=0 #so that it will be placed where I want it.
-    newRoot = cutAndPasteNode(subTree, appendedToNode, bestBranchLengths, LK, mutMatrix,useRateVariation=False, mutMatrices=mutMatrices)
-
-    root= getRoot(t2)
-    reCalculateAllGenomeLists(root,mutMatrix, checkExistingAreCorrect=True,useRateVariation=False,mutMatrices=mutMatrices) #remove               #print("Post-SPR tree: "+createBinaryNewick(root))
-    newTreeLK=calculateTreeLikelihood(root,mutMatrix,useRateVariation=False,mutMatrices=mutMatrices)
-    print(seed)
-    print(subTree)
-    print(appendedToNode)
-    print(newTreeLK-oldTreeLK)
-    print(newLK-originalLK)
-    if abs((newTreeLK-oldTreeLK) - (newLK-originalLK))>1:
-        print("diference is bigger than 1.0")
 
 # End error rate functions ----------------------------------------------------------
 
@@ -7350,11 +6993,17 @@ if not debugging and inputTree=="":
     while nextLeaves:
         node=nextLeaves.pop()
         if not node.children:
-            name=sampleNames[int(node.name[1:])] #strip the 'S'off here.
-            sampleNames[int(node.name[1:])]=None
+            if debugging:
+                name=sampleNames[int(node.name[1:])]  #strip the 'S'off here.
+                sampleNames[int(node.name[1:])]=None
+            else:
+                name=sampleNames[node.name]
+                sampleNames[node.name]=None
             node.name=name
             for m in range(len(node.minorSequences)):
-                old_name = int(node.minorSequences[m][1:])
+                if debugging:
+                    old_name = int(node.minorSequences[m][1:])
+                else: old_name = int(node.minorSequences[m])
                 name=sampleNames[old_name]
                 sampleNames[old_name]=None
                 node.minorSequences[m]=name
@@ -7394,6 +7043,21 @@ print("Time spent finding placement nodes: "+str(timeFinding))
 print("Time spent placing samples on the tree: "+str(timePlacing))
 print("Time spent in total updating the topology and branch lengths: "+str(timeTopology))
 print("successfully (?) finished code")
+############################
+# RF distanc new tree
+trueTree = readNewick("data/treeFile_repeat1_100samples.nw", divideBranchLengthsBy=29892)[0]
+leafNameDict, nodeTable, leafCount, numBranches, leafDistDict, branchLengthDict, sumBranchLengths = prepareTreeComparison(trueTree, rooted=True, addRootRFL = False)
+estimatedTree = readNewick(outputFile+"_tree.tree")[0] #simply using t1 did not seem to work...
+numDiffs, normalisedRF, leafCount, foundBranches, missedBranches, notFoundBranches, RFL =\
+    RobinsonFouldsWithDay1985(trueTree, leafNameDict, nodeTable,  leafCount,numBranches, leafDistDict, branchLengthDict, sumBranchLengths, rooted=True, addRootRFL = False)
+print("RF\t" + "normalisedRF\t" + "leaves\t" + "foundBranches\t" + "missedBranches\t" + "notFoundBranches\t" + "RFL\n")
+print(     str(numDiffs) + "\t" + str(normalisedRF) + "\t" + str(leafCount) + "\t" + str(foundBranches) + "\t" + str(  missedBranches) + "\t" + str(notFoundBranches) + "\t" + str(RFL)+ "\n")
+#Blen true tree:
+totBlenTrue = counttotBLenAll(trueTree)
+totBlenEstimated = counttotBLenAll(estimatedTree)
+print("True blen, ", totBlenTrue, " and estimated ", totBlenEstimated )
+# print("totalLK: "+str(totalLK))
+############################
 exit()
 
 
