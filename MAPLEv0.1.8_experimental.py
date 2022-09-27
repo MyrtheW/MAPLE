@@ -5,7 +5,7 @@ import argparse
 from time import time
 import os.path
 
-# Different sizes an entry can take with error rates:
+# Different size an entry can take with error rates:
 " L	1st 	2nd	    3rd 	4th	    5th 	Note"
 # 2	CATGRN	pos		0                               leaf node or entry with 0 bLen element without flag
 # 3	CATGR	pos	    bLen
@@ -90,7 +90,13 @@ parser.add_argument("--fast", help="Set parameters so to run tree inference fast
 parser.add_argument("--noFastTopologyInitialSearch", help="Don't run a fast short-range topology search before the extensive one.", action="store_true")
 parser.add_argument("--noOptimizeBranchLengths", help="Don't run a final round of detailed branch length optimization.", action="store_true")
 parser.add_argument("--rateVariation", help="Estimate and use rate variation: the model assumes one rate per site, and the rates are assumed independently (no rate categories). This might cause overfitting if the dataset is not large enough, but in any case one would probably only use MAPLE for large enough datasets.", action="store_true")
-parser.add_argument("--errorRate", help="", type=float, default=0.00001)
+parser.add_argument("--errorRate", help="", type=float, default=0.005)
+parser.add_argument("--errorTesting", help="", type=bool, default=False)
+parser.add_argument("--genomeLength", help="", type=float, default=0)
+parser.add_argument("--benchmarkingFile", help="", type=str, default=None) # "benchmarkingFile.tsv"
+parser.add_argument("--trueTree", help="", type=str, default=None)
+
+
 args = parser.parse_args()
 
 APPROX1, APPROX2, APPROX3 = False, False, True
@@ -151,6 +157,10 @@ inputTree=args.inputTree
 inputRFtrees=args.inputRFtrees
 largeUpdate=args.largeUpdate
 rateVariation=args.rateVariation
+errorTesting = args.errorTesting
+genomeLength = args.genomeLength
+benchmarkingFile=args.benchmarkingFile
+trueTree=args.trueTree
 
 
 #ratio of likelihood cost tree search threshold vs likelihood threshold for placement optimization search
@@ -512,17 +522,83 @@ def RobinsonFouldsWithDay1985(t2,leafNameDict,nodeTable,leafCount,numBranches,le
     RFL += KF
     return numDiffs, float(numDiffs)/(2*(leafCount-3)), leafCount, foundBranches, missedBranches, (numBranches-foundBranches), RFL
 
+def traverseTopology(node, function, leafsOnly=False):
+    """
+    Traverse a topology and perform a function
+    :param node: the root node.
+    :param function: the function to be performed at every node. It should take only 'node' as argument
+    :param leafsOnly: If True, the function will only be performed at the leaf node
+    """
+    nodesToVisit=[node]
+    while nodesToVisit:
+        newNode=nodesToVisit.pop()
+        for c in newNode.children:
+            nodesToVisit.append(c)
+        if not newNode.children or not leafsOnly:
+            function(newNode)
+
+def getRoot(tree):
+    root = tree
+    while root.up != None:
+        root = root.up
+    return root
+
+def counttotBLenAll(tree):
+    """
+    Traverse the tree to count the sum of all the branch lengths.
+    """
+    root = getRoot(tree)
+    global totBLen
+    totBLen = 0
+    def counttotBLen(node):
+        global totBLen
+        totBLen += node.dist
+    traverseTopology(root, counttotBLen)
+    # print("Tot branch length: "+str(totBLen))
+    return totBLen - root.dist
+
 ############################
 # RF distanc new tree
-trueTree = readNewick("data/treeFile_repeat1_100samples.nw", divideBranchLengthsBy=29892)[0]
-leafNameDict, nodeTable, leafCount, numBranches, leafDistDict, branchLengthDict, sumBranchLengths = prepareTreeComparison(trueTree, rooted=True, addRootRFL = False)
-estimatedTree = readNewick(outputFile+"_tree.tree")[0] #simply using t1 did not seem to work...
-numDiffs, normalisedRF, leafCount, foundBranches, missedBranches, notFoundBranches, RFL =\
-    RobinsonFouldsWithDay1985(trueTree, leafNameDict, nodeTable,  leafCount,numBranches, leafDistDict, branchLengthDict, sumBranchLengths, rooted=True, addRootRFL = False)
-print("RF\t" + "normalisedRF\t" + "leaves\t" + "foundBranches\t" + "missedBranches\t" + "notFoundBranches\t" + "RFL\n")
-print(     str(numDiffs) + "\t" + str(normalisedRF) + "\t" + str(leafCount) + "\t" + str(foundBranches) + "\t" + str(  missedBranches) + "\t" + str(notFoundBranches) + "\t" + str(RFL)+ "\n")
+if errorTesting:
+    #following parameters must be specified
+    #  -    errorTesting
+    #  -    outFolder
+    #  -    outputFile
+    #  -    genomeLength
+    #  -    inputTree       the true trees
+    #  -    inputRFtrees    list of estimated trees newick files
+    if not os.path.isfile(inputTree):
+        print("Input tree in newick format "+inputTree+" not found, quitting MAPLE RF distance calculation. Use option --inputTree to specify a valid input newick tree file.")
+        raise Exception("exit")
+    if not os.path.isfile(inputRFtrees):
+        print("Input trees in newick format "+inputRFtrees+" not found, quitting MAPLE RF distance calculation. Use option --inputRFtrees to specify valid file with input newick trees.")
+        raise Exception("exit")
+    lineSplit=outputFile.split("/")
+    lineSplit[-1]=""
+    outFolder="/".join(lineSplit)
+    if not os.path.isdir(outFolder):
+        print("Path to output file "+outFolder+" does not exist, quitting MAPLE RF calculation. Use option --output to specify a valid output file path and output file name.")
+        raise Exception("exit")
+    if os.path.isfile(outputFile+"_RFdistances.tsv") and (not overwrite):
+        print("File "+outputFile+"_RFdistances.tsv already exists, quitting MAPLE RF calculation. Use option --overwrite if you want to overwirte previous inference.")
+        raise Exception("exit")
+    trueTree=readNewick(inputTree, divideBranchLengthsBy=genomeLength)[0]
+    totalBranchLength = counttotBLenAll(trueTree)
 
-# print("totalLK: "+str(totalLK))
+    leafNameDict, nodeTable, leafCount, numBranches, leafDistDict, branchLengthDict, sumBranchLengths = prepareTreeComparison(trueTree, rooted=True, addRootRFL = False)
+    otherTrees=readNewick(inputRFtrees,multipleTrees=True)
+    file=open(outputFile+"_RFdistances.tsv","w")
+    file.write( "RF\t"+"normalisedRF\t"+"leaves\t"+"foundBranches\t"+"missedBranches\t"+ "notFoundBranches\t" + "RFL\t" + "totalBranchLength\n")
+    file.write( str(0) + "\t" + str(0) + "\t" + str(0) + "\t" + str(0) + "\t" + str(0) + "\t" + str(0) + "\t" + str(0) + "\t" + str(totalBranchLength) + "\n")
+
+    for estimatedTree in otherTrees:
+        totalBranchLength = counttotBLenAll(estimatedTree)
+        numDiffs, normalisedRF, leafCount, foundBranches, missedBranches, notFoundBranches, RFL = \
+            RobinsonFouldsWithDay1985(estimatedTree, leafNameDict, nodeTable, leafCount, numBranches, leafDistDict,
+                                      branchLengthDict, sumBranchLengths, rooted=True, addRootRFL=False)
+        file.write(str(numDiffs)+"\t"+str(normalisedRF)+"\t"+str(leafCount)+"\t"+str(foundBranches)+"\t"+str(missedBranches)+"\t"+str(notFoundBranches)+"\t"+str(RFL)+ "\t"+str(totalBranchLength)+"\n")
+    print("Comparison ended")
+    exit()
 ############################
 
 #run Robinson-Foulds distance calculations
@@ -2213,6 +2289,7 @@ def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTop
     nodesToVisit=[]
     removedPartials=node.children[child].probVect
     removedPartialsIsLeaf = (node.children[child].children==[])
+    originalLK = bestLKdiff
     if node.up!=None:
         if node.up.children[0]==node:
             childUp=1
@@ -2229,6 +2306,8 @@ def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTop
         # a number of consecutively failed traversal steps since the last improvement found (if this number goes beyond a threshold, traversal in the considered direction might be halted).
         nodesToVisit.append((node.up,childUp,node.children[1-child].probVect,node.children[1-child].dist+node.dist,True,bestLKdiff,0, node.children[1-child].children==[]))
         nodesToVisit.append((node.children[1-child],0,vectUpUp,node.children[1-child].dist+node.dist,True,bestLKdiff,0, False))
+        originalBLens = (node.dist, node.children[1 - child].dist, removedBLen) #v0.1.9
+        originalPlacement = node.children[1 - child]
     else:
         # case node is root
         if node.children[1-child].children: # case there is only one sample outside of the subtree doesn't need to be considered
@@ -2240,6 +2319,11 @@ def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTop
             vectUp2=rootVector(child1.probVect,child1.dist,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices,
                                isLeaf=child1.children==[])
             nodesToVisit.append((child2,0,vectUp2,child2.dist,True,bestLKdiff,0, False)) #isLeaf is false
+            originalPlacement = node.children[1 - child].children[0] #v0.1.9
+            originalBLens = (0.0, node.children[1 - child].children[0].dist, removedBLen) #v0.1.9
+        else:
+            originalPlacement = node.children[1 - child] #v0.1.9
+            originalBLens = (0.0, node.children[1 - child].dist, removedBLen) #v0.1.9
 
     while nodesToVisit:
         t1,direction,passedPartials,distance,needsUpdating,lastLK,failedPasses, passedPartialsIsLeaf=nodesToVisit.pop()
@@ -2402,11 +2486,15 @@ def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTop
     #Initial exploration is finished.
     #Now, for each branch within threshold likelihood distance from the best found, optimize branch lengths.
     #Use optimized scores to select final best branch
+    bestBranchLengths = originalBLens #version 0.1.9
 
-    bestBranchLengths=(None,None,None)
+    #bestBranchLengths=(None,None,None)
     bestScore= bestLKdiff #currentLK -1 #float('inf') #
     compensanteForBranchLengthChange=True #true by default, also add the LK cost for changing the Blen in the initial tree.
     secondBranchLengthOptimizationRound=False #false by default
+    if not bestNodes: # v0.1.9
+        return originalPlacement, originalLK, originalBLens
+    BLenHaveBeenOptimized = False # v0.1.9
     for nodePair in bestNodes: # it is strange that bestScore is not replaced in the following part?
         score=nodePair[1]
         if score>=bestLKdiff-thresholdLogLKtopology/factorOptimizePlacementLKvsSearchLK:
@@ -2451,10 +2539,12 @@ def findBestParentTopology(node,child,bestLKdiff,removedBLen,mutMatrix,strictTop
             else:
                 optimizedScore=appendingCost
             if optimizedScore>=bestScore: # if this statement is never true, bestBranchLengths remains (None,none, none)
+                BLenHaveBeenOptimized = True #v0.1.9
                 bestNode=t1
                 bestScore=optimizedScore
                 bestBranchLengths=(bestTopLength,bestBottomLength,bestAppendingLength)
-
+    if not BLenHaveBeenOptimized: #v0.1.9
+        bestBranchLengths = (bestNode.dist / 2, bestNode.dist / 2, removedBLen)
     return bestNode, bestScore, bestBranchLengths
 
 
@@ -2892,13 +2982,26 @@ def placeSampleOnTree(node,newPartials,sample,newChildLK, bestUpLength, bestDown
         bestAppendingLength=estimateBranchLengthWithDerivative(totRoot,newPartials,mutMatrix)
         root=node
         newChildLK=appendProb(totRoot,newPartials,bestAppendingLength,mutMatrix)
-    elif not bestUpLength:
-        pNode=node.up
-        while (not pNode.dist) and (pNode.up!=None):
-            pNode=pNode.up
-        if pNode.up==None:
-            root=pNode
-            tryNewRoot=True
+    # v0.1.9
+    else:
+        if node.up.children[0]==node:
+            child=0
+            vectUp=node.up.probVectUpRight
+        else:
+            child=1
+            vectUp=node.up.probVectUpLeft
+        if not bestUpLength:
+            pNode=node.up
+            while (not pNode.dist) and (pNode.up!=None):
+                pNode=pNode.up
+            if pNode.up==None:
+                root=pNode
+                tryNewRoot=True
+                if (not bestDownLength) or (bestDownLength>1.01*node.dist) or (bestDownLength<0.99*node.dist):
+                    node.dist=bestDownLength
+                    nodeList=[(node,2),(node.up,child)]
+                    updatePartials(nodeList,mutMatrix)
+
     #in case of best placement as a descendant appended exactly at the root node, attempt also to create new root
     if tryNewRoot:
         node=root
@@ -3540,6 +3643,13 @@ def placeSubtreeOnTree(node,newPartials,appendedNode,newChildLK,bestBranchLength
     # 	root=node
     # 	newChildLK=appendProbNode(totRoot,newPartials,bestAppendingLength,mutMatrix)
     #elif not bestUpLength:
+    if node.up.children[0] == node:
+        child = 0
+        vectUp = node.up.probVectUpRight
+    else:
+        child = 1
+        vectUp = node.up.probVectUpLeft
+
     if not bestUpLength:
         pNode=node.up
         while (not pNode.dist) and (pNode.up!=None):
@@ -3547,6 +3657,10 @@ def placeSubtreeOnTree(node,newPartials,appendedNode,newChildLK,bestBranchLength
         if pNode.up==None:
             root=pNode
             tryNewRoot=True
+            if (not bestDownLength) or (bestDownLength > 1.01 * node.dist) or (bestDownLength < 0.99 * node.dist):
+                node.dist = bestDownLength
+                nodeList = [(node, 2), (node.up, child)]
+                updatePartials(nodeList, mutMatrix, useRateVariation=useRateVariation, mutMatrices=mutMatrices)
     #in case of best placement as a descendant appended exactly at the root node, attempt also to create new root
     if tryNewRoot:
         node=root
@@ -3820,9 +3934,11 @@ def traverseTreeForTopologyUpdate(node,mutMatrix,strictTopologyStopRules=strictT
                     sibling=parentNode.children[0]
                 if bestNode==sibling:
                     topologyUpdated=False
+                if bestNodeSoFar.up == sibling and (not bestBranchLengths[0]):
+                    topologyUpdated = False
 
                 if topologyUpdated:
-                    totalImprovement=(bestLKdiff-bestCurrentLK) #todo: I think it would make more sense to express this as bestLKdiff- originalLK, because now you are comparing it with the case in which you did a bLen update, which is not a fair comparison in my belief.
+                    totalImprovement=(bestLKdiff-originalLK) #todo: I think it would make more sense to express this as bestLKdiff- originalLK, because now you are comparing it with the case in which you did a bLen update, which is not a fair comparison in my belief.
                     if verbose:
                         print("\n\n In traverseTreeForTopologyUpdate() found SPR move with improvement "+str(totalImprovement))
                     if debugging:
@@ -4514,7 +4630,7 @@ def expectationMaximizationCalculationRates(root,useRateVariation=False):
 
 
 
-
+startTime = time()
 if runOnlyExample:
     data={}
     data["refSeq"]=[]
@@ -4577,7 +4693,7 @@ while distances:
     # 	node , bestNewLK, isMidNode, bestUpLK, bestDownLK, bestDownNode, adjustBLen=findBestParentOld(t1,newPartials,sample,mutMatrix,debug=True)
     # 	raise Exception("exit")
     timeFinding+=(time()-start)
-    if bestScore<0.5:
+    if bestBranchLengths != None: #v0.1.9
         start=time()
         newRoot=placeSampleOnTree(bestNode,newPartials,sample,bestScore, bestBranchLengths[0], bestBranchLengths[1], bestBranchLengths[2],mutMatrix,pseudoMutCounts)
         if newRoot!=None:
@@ -7043,20 +7159,32 @@ print("Time spent finding placement nodes: "+str(timeFinding))
 print("Time spent placing samples on the tree: "+str(timePlacing))
 print("Time spent in total updating the topology and branch lengths: "+str(timeTopology))
 print("successfully (?) finished code")
+runTime = time() - startTime
 ############################
-# RF distanc new tree
-trueTree = readNewick("data/treeFile_repeat1_100samples.nw", divideBranchLengthsBy=29892)[0]
-leafNameDict, nodeTable, leafCount, numBranches, leafDistDict, branchLengthDict, sumBranchLengths = prepareTreeComparison(trueTree, rooted=True, addRootRFL = False)
-estimatedTree = readNewick(outputFile+"_tree.tree")[0] #simply using t1 did not seem to work...
-numDiffs, normalisedRF, leafCount, foundBranches, missedBranches, notFoundBranches, RFL =\
-    RobinsonFouldsWithDay1985(trueTree, leafNameDict, nodeTable,  leafCount,numBranches, leafDistDict, branchLengthDict, sumBranchLengths, rooted=True, addRootRFL = False)
-print("RF\t" + "normalisedRF\t" + "leaves\t" + "foundBranches\t" + "missedBranches\t" + "notFoundBranches\t" + "RFL\n")
-print(     str(numDiffs) + "\t" + str(normalisedRF) + "\t" + str(leafCount) + "\t" + str(foundBranches) + "\t" + str(  missedBranches) + "\t" + str(notFoundBranches) + "\t" + str(RFL)+ "\n")
-#Blen true tree:
-totBlenTrue = counttotBLenAll(trueTree)
-totBlenEstimated = counttotBLenAll(estimatedTree)
-print("True blen, ", totBlenTrue, " and estimated ", totBlenEstimated )
-# print("totalLK: "+str(totalLK))
+if benchmarkingFile:
+    # Required arguments: - benchmarkingFile to append to!
+
+
+    trueTree = readNewick(trueTree, divideBranchLengthsBy=lRef)[0]
+    leafNameDict, nodeTable, leafCount, numBranches, leafDistDict, branchLengthDict, sumBranchLengths = prepareTreeComparison(trueTree, rooted=True, addRootRFL = False)
+    estimatedTree = readNewick(outputFile+"_tree.tree")[0] #simply using t1 did not seem to work...
+    numDiffs, normalisedRF, leafCount, foundBranches, missedBranches, notFoundBranches, RFL =\
+        RobinsonFouldsWithDay1985(trueTree, leafNameDict, nodeTable,  leafCount,numBranches, leafDistDict, branchLengthDict, sumBranchLengths, rooted=True, addRootRFL = False)
+    totBlenTrue = counttotBLenAll(trueTree)
+    totBlenEstimated = counttotBLenAll(estimatedTree)
+
+    if not os.path.exists(benchmarkingFile):
+        file = open(benchmarkingFile, "w")
+        file.write( "errorRateInEstimation\t" + "inputFile\t" + "lRef\t"+ "leaves\t" + "||\t" +
+                    "runtime\t" + "LK\t" + "RF\t" + "normalisedRF\t" + "foundBranches\t" + "missedBranches\t" + "notFoundBranches\t" + "RFL\t" + "totalBranchLength\t" + "totalBranchLengthTrue\n")
+        # file.write(str(0) + "\t" + str(0) + "\t" + str(0) + "\t" + str(0) + "\t" + str(0) + "\t" + str(0) + "\t" + str(
+        #     0) + "\t" + str(totBlenTrue) + "\n")
+        file.close()
+    file = open(benchmarkingFile, "a")
+    file.write(str(errorRate) + "\t" + str(inputFile) + "\t" + str(lRef) + "\t" + str(leafCount) + "\t||\t" +
+               str(runTime) + "\t" + str(totalLK) + "\t" + str(numDiffs) + "\t" + str(normalisedRF)  + "\t" + str(foundBranches) + "\t" + str(missedBranches) + "\t" + str(notFoundBranches) + "\t" + str(RFL) + "\t" + str(totBlenEstimated)+ "\t"  + str(totBlenTrue)+ "\n")
+    file.close()
+
 ############################
 exit()
 
