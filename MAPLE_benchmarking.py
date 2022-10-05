@@ -1459,7 +1459,7 @@ exit()
 nRepeats=10
 nRepeatsSimu=10
 folderName="/nfs/research/goldman/demaio/fastLK/realData/subsamples/"
-folderNameSimu="/nfs/research/goldman/demaio/fastLK/simulations/subsamples/"
+folderNameSimu="/nfs/research/goldman/demaio/fastLK/simulations/subsamples/" # folderNameSimu = args.pathToSimulationFolder + folder + '/' + str(j) + "subsamples/output_repl\"$i\"/"
 speeds=["slowest","slow","medium","fast","fastest"]
 allowedFails=[5,5,5,4,3]
 thresholdLogLKs=[120.0, 100.0, 80.0, 60.0, 40.0]
@@ -1472,109 +1472,200 @@ bLenFactors=[4.0,4.0,3.0,2.0,1.0]
 #REDUCE THESE TO TRY AND REDUCE MEMORY COST, for example using
 #bLenFactors=[4.0,3.0,2.0,1.0]
 #bLenFactors=[8.0,8.0,3.0,2.0]
-sampleSizes = [1000,2000]
-errorRates = [0.0001, 0.0005]# args.errorRates #
+sampleSizes = [100, 1000, 2000, 5000]#, 10000, 20000, 50000, 100000, 200000, 500000]
+errorRates = [0, 0.0001, 0.0005]# args.errorRates #
+readFileUser = "demaio"
+writeFileUser = "myrthe"
+folderNameCode ="/nfs/research/goldman/" +writeFileUser+  "/fastLK/code/" # folderNameSimu = args.pathToSimulationFolder + folder + '/' + str(j) + "subsamples/output_repl\"$i\"/"
 
+# file=open("/Users/demaio/Desktop/GISAID-hCoV-19-phylogeny-2021-03-12/createFoldersSimu.sh","w")
+# for j in [100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000]:
+# 	for s in range(len(speeds)):
+# 		file.write("for i in $(seq 1 "+str(nRepeatsSimu)+")\n"+"do \n\t"+"mkdir "+folderNameSimu+str(j)+"subsamples/output_repl\"$i\"/\n"+"done\n\n")
+# 		#file.write("for i in $(seq 1 "+str(nRepeats)+")\n"+"do \n\t"+"bsub -M "+str(int(200+j/8))+" -o "+folderName+str(j)+"subsamples/output_repl\"$i\"/fastLKtopology_"+speeds[s]+"_console_output.txt -e "+folderName+str(j)+"subsamples/output_repl\"$i\"/fastLKtopology_"+speeds[s]+"_console_error.txt /hps/software/users/goldman/pypy3/pypy3.7-v7.3.5-linux64/bin/pypy3 /nfs/research/goldman/demaio/fastLK/code/estimatePhylogenyIterativeFastLK.py --reference /nfs/research/goldman/demaio/fastLK/realData/2021-03-31_unmasked_differences_reduced.txt_consensus.fa --input "+folderName+str(j)+"subsamples/diffFile_seed\"$i\"_"+str(j)+"samples.txt --binaryTree --overwrite --allowedFails "+str(allowedFails[s])+" --thresholdLogLK "+str(thresholdLogLKs[s])+" --bLenAdjustment "+str(bLenAdjustments[s])+" --bLenFactor "+str(bLenFactors[s])+" --numTopologyImprovements "+str(numTopologyImprovements[s])+" --thresholdTopologyPlacement "+str(thresholdTopologyPlacement[s])+" --allowedFailsTopology "+str(allowedFailsTopology[s])+" --thresholdLogLKtopology "+str(thresholdLogLKtopology[s])+" --output "+folderName+str(j)+"subsamples/output_repl\"$i\"/fastLKtopology_"+speeds[s]+"\n"+"done\n\n")
+# 	file.write("\n\n")
+# file.close()
 
-file=open("/Users/demaio/Desktop/GISAID-hCoV-19-phylogeny-2021-03-12/createFoldersSimu.sh","w")
-for j in [100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000]:
-	for s in range(len(speeds)):
-		file.write("for i in $(seq 1 "+str(nRepeatsSimu)+")\n"+"do \n\t"+"mkdir "+folderNameSimu+str(j)+"subsamples/output_repl\"$i\"/\n"+"done\n\n")
-		#file.write("for i in $(seq 1 "+str(nRepeats)+")\n"+"do \n\t"+"bsub -M "+str(int(200+j/8))+" -o "+folderName+str(j)+"subsamples/output_repl\"$i\"/fastLKtopology_"+speeds[s]+"_console_output.txt -e "+folderName+str(j)+"subsamples/output_repl\"$i\"/fastLKtopology_"+speeds[s]+"_console_error.txt /hps/software/users/goldman/pypy3/pypy3.7-v7.3.5-linux64/bin/pypy3 /nfs/research/goldman/demaio/fastLK/code/estimatePhylogenyIterativeFastLK.py --reference /nfs/research/goldman/demaio/fastLK/realData/2021-03-31_unmasked_differences_reduced.txt_consensus.fa --input "+folderName+str(j)+"subsamples/diffFile_seed\"$i\"_"+str(j)+"samples.txt --binaryTree --overwrite --allowedFails "+str(allowedFails[s])+" --thresholdLogLK "+str(thresholdLogLKs[s])+" --bLenAdjustment "+str(bLenAdjustments[s])+" --bLenFactor "+str(bLenFactors[s])+" --numTopologyImprovements "+str(numTopologyImprovements[s])+" --thresholdTopologyPlacement "+str(thresholdTopologyPlacement[s])+" --allowedFailsTopology "+str(allowedFailsTopology[s])+" --thresholdLogLKtopology "+str(thresholdLogLKtopology[s])+" --output "+folderName+str(j)+"subsamples/output_repl\"$i\"/fastLKtopology_"+speeds[s]+"\n"+"done\n\n")
-	file.write("\n\n")
-file.close()
 
 """SIMULATE ERRORS""" #Myrthe
-#output file --> input[:-3]+"_errors" + errorRate + ".fa"
+console_output = folderNameCode+"results/console_output.txt"
+console_errors = folderNameCode+"results/console_errors.txt"
 file= open("simulateErrors.sh","w") #open("/Users/demaio/Desktop/GISAID-hCoV-19-phylogeny-2021-03-12/createSmallMAPLEfiles.sh","w")
+# file.write("mkdir " + folderNameCode + "\n")
+file.write("rm -r " + console_output + "\n")# + "; mkdir " + console_output + "\n")
+file.write("rm -r " + console_errors + "\n")#+"; mkdir " + console_errors + "\n")
 file.write(" \n#SIMULATE ERRORS \n")
 for errorRate in errorRates:
-	for j in sampleSizes:
-		file.write("for i in $(seq 1 "+str(nRepeatsSimu)+")\n"+"do \n\t"+
-			"bsub -M " +str(int(400+j/2))+" -o "+folderNameSimu+str(j)+"subsamples/output_repl\"$i\"/MAPLE004_Ns_fileCreation_console_output_myrthe.txt -e " + folderNameSimu + str(j) + "subsamples/output_repl\"$i\"/MAPLE004_Ns_fileCreation_console_error_myrthe.txt " # job creation ; output file and error file. ,
-		           + "/hps/software/users/goldman/pypy3/pypy3.7-v7.3.5-linux64/bin/pypy3 /nfs/research/goldman/demaio/fastLK/code/MAPLE_simulate_errors.py " #when using python instead?
-		           + "--path /nfs/research/goldman/demaio/fastLK/simulations/" + str(j)
-		           + " --input fastaFile_repeat\"$i\"_"+str(j)+"samples_Ns.fa --errorRate " + str(errorRate)+" done\n\n")
+	#if errorRate:
+		for j in sampleSizes:
+			pathRead = "/nfs/research/goldman/"+ readFileUser + "/fastLK/simulations/subsamples/" + str(j) + 'subsamples/' #+"subsamples/"
+			pathWrite = "/nfs/research/goldman/"+ writeFileUser + "/fastLK/simulations/subsamples/" + str(j) + 'subsamples/' #+"subsamples/"
+			fileNameIn = "fastaFile_repeat\"$i\"_"+str(j)+"samples_Ns.fa"
+			fileNameOut = "fastaFile_repeat\"$i\"_"+str(j)+"samples_Ns_errors"+ str(errorRate) + ".fa"
+			file.write("for i in $(seq 1 "+str(nRepeatsSimu)+")\n"+"do \n\t"
+				          + "mkdir -p " + pathWrite + "\n\t"
+			           # perhaps make sure we only do so if it doesn't exist already.
+						+"bsub -M " +str(int(400+j/2))+" -o "+ console_output + " -e " + console_errors # job creation ; output file and error file. ,
+			            + " /hps/software/users/goldman/pypy3/pypy3.7-v7.3.5-linux64/bin/pypy3 "
+			            +  folderNameCode + "MAPLE_simulate_errors.py " #when using python instead?
+					    + " --input " + pathRead + fileNameIn
+			           + " --output " + pathWrite + fileNameOut
+			           + " --errorRate " + str(errorRate)+"\n done\n\n")
+
+"""SIMULATE SITE-SPECIFIC ERRORS""" #Myrthe
+console_output = folderNameCode+"results/console_output.txt"
+console_errors = folderNameCode+"results/console_errors.txt"
+file= open("simulateErrors.sh","w") #open("/Users/demaio/Desktop/GISAID-hCoV-19-phylogeny-2021-03-12/createSmallMAPLEfiles.sh","w")
+# file.write("mkdir " + folderNameCode + "\n")
+file.write("rm -r " + console_output + "\n")# + "; mkdir " + console_output + "\n")
+file.write("rm -r " + console_errors + "\n")#+"; mkdir " + console_errors + "\n")
+file.write(" \n#SIMULATE ERRORS \n")
+for errorRate in errorRates:
+	if errorRate: #errorRate should not be 0.
+		for j in sampleSizes:
+			pathRead = "/nfs/research/goldman/"+ readFileUser + "/fastLK/simulations/subsamples/" + str(j) + 'subsamples/' #+"subsamples/"
+			pathWrite = "/nfs/research/goldman/"+ writeFileUser + "/fastLK/simulations/subsamples/" + str(j) + 'subsamples/' #+"subsamples/"
+			fileNameIn = "fastaFile_repeat\"$i\"_"+str(j)+"samples_Ns.fa"
+			fileNameOut = "fastaFile_repeat\"$i\"_"+str(j)+"samples_Ns_errors"+ str(errorRate) + ".fa"
+			file.write("for i in $(seq 1 "+str(nRepeatsSimu)+")\n"+"do \n\t"
+				          + "mkdir -p " + pathWrite + "\n\t"
+			           # perhaps make sure we only do so if it doesn't exist already.
+						+"bsub -M " +str(int(400+j/2))+" -o "+ console_output + " -e " + console_errors # job creation ; output file and error file. ,
+			            + " /hps/software/users/goldman/pypy3/pypy3.7-v7.3.5-linux64/bin/pypy3 "
+			            +  folderNameCode + "MAPLE_simulate_errors.py " #when using python instead?
+					    + " --input " + pathRead + fileNameIn
+			           + " --output " + pathWrite + fileNameOut
+			           + " --siteSpecific "
+			           + " --errorRate " + str(errorRate)+"\n done\n\n")
+#afterwarda an error rate file is stored. file[:-3] + "_siteSpecificErrors.txt","w")
+
 
 """CALL MAPLE FILE""" #Myrthe
 #fixing the accidental overwriting of some small MAPLE files
-#, 5000, 10000, 20000, 50000, 100000, 200000, 500000
 file.write(" \n#CREATE MAPLE FILES \n")
 for errorRate in errorRates:
-	for j in sampleSizes:
-			file.write("for i in $(seq 1 "+str(nRepeatsSimu)+")\n"+"do \n\t"+
-			"bsub -M "+str(int(400+j/2))+" -o "+folderNameSimu+str(j)+"subsamples/output_repl\"$i\"/MAPLE004_Ns_fileCreation_console_output_myrthe.txt -e "
-			+folderNameSimu+str(j)+"subsamples/output_repl\"$i\"/MAPLE004_Ns_fileCreation_console_error_myrthe.txt /hps/software/users/goldman/pypy3/pypy3.7-v7.3.5-linux64/bin/pypy3 /nfs/research/goldman/demaio/fastLK/code/createMapleFile.py --path /nfs/research/goldman/demaio/fastLK/simulations/"+str(j)
-			+"subsamples/ --reference MN908947.3.fasta --fasta "
-			+"fastaFile_repeat\"$i\"_"+str(j)+"samples_Ns_errors"+ str(errorRate) + ".fa --output diffFile_repeat\"$i\"_"+str(j)+"samples_Ns_errors"+ str(errorRate) + ".txt --overwrite\n\n\t") #Myrthe: added '_errors' in input file
-
-
-			file.write(
-			# "bsub -M "+str(int(400+j/2))+" -o "+folderNameSimu+str(j)+"subsamples/output_repl\"$i\"/MAPLE004_4cat_fileCreation_console_output.txt -e "
-			# +folderNameSimu+str(j)+"subsamples/output_repl\"$i\"/MAPLE004_4cat_fileCreation_console_error.txt /hps/software/users/goldman/pypy3/pypy3.7-v7.3.5-linux64/bin/pypy3 /nfs/research/goldman/demaio/fastLK/code/createMapleFile.py --path /nfs/research/goldman/demaio/fastLK/simulations/"+str(j)
-			# +"subsamples/ --reference MN908947.3.fasta --fasta "
-			# +"fastaFile_4cat_repeat\"$i\"_"+str(j)+"samples.fa --output diffFile_4cat_repeat\"$i\"_"+str(j)+"samples.txt --overwrite\n"+
-			"done\n\n")
+	#if errorRate:
+		for j in sampleSizes:
+			pathWrite = "/nfs/research/goldman/"+ writeFileUser + "/fastLK/simulations/subsamples/" + str(j) + 'subsamples/' #+"subsamples/"
+			fileNameIn = "fastaFile_repeat\"$i\"_"+str(j)+"samples_Ns_errors"+ str(errorRate) + ".fa"
+			fileNameOut = "diffFile_repeat\"$i\"_"+str(j)+"samples_Ns_errors"+ str(errorRate) + ".txt"
+			file.write("for i in $(seq 1 "+str(nRepeatsSimu)+")\n"+"do \n\t"
+			           #+ "mkdir -p " + pathWrite + "\n\t"
+			           + "bsub -M "+str(int(400+j/2))+" -o "+ console_output
+				+" -e " + console_errors
+				+" /hps/software/users/goldman/pypy3/pypy3.7-v7.3.5-linux64/bin/pypy3 /nfs/research/goldman/demaio/fastLK/code/createMapleFile.py "
+				+" --path " + pathWrite
+				+" --fasta " + fileNameIn
+				+" --output " + fileNameOut
+				+" --overwrite\n" #Myrthe: added '_errors' in input file
+				+"done\n\n")#--reference MN908947.3.fasta
 file.close()
 
+j=5000
+errorRate = 0.0001
+filename = "diffFile_repeat\"$i\"_"+str(j)+"samples_Ns_errors"+ str(errorRate) + ".txt"
+pathWrite = "/nfs/research/goldman/" + writeFileUser + "/fastLK/simulations/subsamples/" + str(
+	j) + 'subsamples/'  # +"subsamples/"
+
+# Check if files exist
+print("for i in $(seq 1 10)\n" + "do \n\t",
+      "FILE= ", pathWrite + filename,
+      """
+	  
+		  if [ -f "$FILE" ]; then
+			  echo "$FILE exists."
+			  FILESIZE=$(stat -c%s "$FILE")
+			  MINSIZE = 100
+			  if (( FILESIZE < MINSIZE)); then 
+				  echo "$FILE too small"
+				  head -3 "$FILE"  
+			  fi
+		  else
+			  echo "$FILE does not exist."
+		  fi
+	  done
+	  """
+      )
 
 """RUN MAPLE """
-# creating bash scripts for MAPLE
-MAPLEoptions = ["", " --fast", " --rateVariation", " --fast --rateVariation", " --model UNREST",
-                " --fast --model UNREST", " --model UNREST --rateVariation", " --fast --model UNREST --rateVariation"]
-MAPLEoptionsNames = ["", "_fast", "_rateVar", "_fast_rateVar", "_unrest", "_fast_unrest", "_unrest_rateVar",
-                     "_fast_unrest_rateVar"]
-foldersForTreeFile = ["", "simulationsSubsamples", "simulations4catSubsamples", "simulationsAlphaSubsamples",
-                      "simulationsSubsamples"]
-for versNum in range(len(MAPLEversions)):
-	version = MAPLEversions[versNum]
-	file = open(args.pathToSimulationFolder + "submitMAPLE" + version + ".sh", "w")
-	for j in numSamples:
-		file.write("for i in $(seq 1 10)\n do\n\n")
-		for scenario in range(len(folders)):
-			if scenario == 0:
-				refFile = args.inputRealDataReference
-			else:
-				refFile = args.inputSimulationReference
-			folder = folders[scenario]
-			folderNameSimu = args.pathToSimulationFolder + folder + '/' + str(j) + "subsamples/output_repl\"$i\"/"
-			pathToFile = args.pathToSimulationFolder + folder + '/' + str(j) + "subsamples/repeat\"$i\"_" + str(
-				j) + "samples_" + folder
 
-			for option in range(len(MAPLEoptions)):
-				if option < 2 or testOptions:
-					# remove existing result if already exists - this helps in case of re-running an analysis, and in case the new version fails, to wrongly use the old tree as estimate of the new version.
-					file.write("rm -f " + folderNameSimu + "MAPLE" + version + MAPLEoptionsNames[
-						option] + "_tree.tree || true\n")
-					# run MAPLE
-					file.write("bsub -M " + str(int(400 + j / 20)) + " -o " + folderNameSimu + "MAPLE" + version +
-					           MAPLEoptionsNames[
-						           option] + "_console_output.txt -e " + folderNameSimu + "MAPLE" + version +
-					           MAPLEoptionsNames[option] + "_console_error.txt "
-					           + "/hps/software/users/goldman/pypy3/pypy3.7-v7.3.5-linux64/bin/pypy3 /nfs/research/goldman/demaio/fastLK/code/MAPLEv" + version + ".py --reference " + refFile +
-					           MAPLEoptions[option] + " --input "
-					           + pathToFile + ".txt --overwrite --output " + folderNameSimu + "MAPLE" + version +
-					           MAPLEoptionsNames[option] + "\n")
+version = "0.1.9_error"
+file = open("submitMAPLEv" + version + ".sh", "w")
+file.write("rm -r " + console_output + "\n")# + "; mkdir " + console_output + "\n")
+file.write("rm -r " + console_errors + "\n")#+"; mkdir " + console_errors + "\n")
+file.write(" \n # creating bash scripts for MAPLE \n")
+for simulationErrorRate in [0] + errorRates:
+	for inferenceErrorRate in [0] + errorRates:
+		for j in sampleSizes:
+			pathRead = "/nfs/research/goldman/" + readFileUser + "/fastLK/simulations/subsamples/" + str(j) + 'subsamples/'  # +"subsamples/"
+			pathWrite = "/nfs/research/goldman/" + writeFileUser + "/fastLK/simulations/subsamples/" + str(j) + 'subsamples/'
+			fileName = "diffFile_repeat\"$i\"_"+str(j)+"samples_Ns" + "_errors"+ str(simulationErrorRate) + ".txt" #if errorRate else "diffFile_repeat\"$i\"_"+str(j)+"samples_Ns"  + ".txt"
+			treeFile = "treeFile_repeat\"$i\"_" + str(j) +"samples.nw"
+			# possible to do remove existing result if already exists - this helps in case of re-running an analysis, and in case the new version fails, to wrongly use the old tree as estimate of the new version.
+			# run MAPLE
+			file.write("for i in $(seq 1 10)\n do\n\t")
+			file.write("bsub -M " + str(int(400 + j / 20))
+			            + " -o " + console_output
+			            + " -e " + console_errors
+			            + " /hps/software/users/goldman/pypy3/pypy3.7-v7.3.5-linux64/bin/pypy3 " + folderNameCode +"MAPLEv" + version + ".py "
+			            + " --input " + pathWrite + fileName
+						+ " --errorRate " + str(inferenceErrorRate)
+						+ " --benchmarkingFile " + folderNameCode+"results/benchmarkingFile.tsv"
+						+ " --trueTree " + pathRead + treeFile
+			            + " --calculateLKfinalTree --overwrite"
+			            + " --output " + pathWrite + "outputFile_infError_" + str(inferenceErrorRate) + fileName[8:]
+			            + "\n")
+			file.write("done\n\n")
+file.close()
+print("Created MAPLE bash script submitMAPLEv" + version + ".sh")
 
-		file.write("done\n\n")
-	file.close()
-	print("Created MAPLE bash script " + args.pathToSimulationFolder + "submitMAPLE" + version + ".sh")
+"""RUN MAPLE ORIGINAL"""
+versions = ["0.1.9_original", "0.1.9_error_site_specific"]  #originial
+resultFile= "benchmarkingFile2.tsv"# andere benhmark=results folder.2
+file = open("submitMAPLEv" + ".sh", "w")
+file.write("rm -r " + console_output + "\n")# + "; mkdir " + console_output + "\n")
+file.write("rm -r " + console_errors + "\n")#+"; mkdir " + console_errors + "\n")
+for version in versions:
+	file.write(" \n # creating bash scripts for MAPLE \n")
+	for inferenceErrorRate in [0]:
+		for simulationErrorRate in [0]:# + errorRates:
+			for j in [5000]:##sampleSizes:
+				pathRead = "/nfs/research/goldman/" + readFileUser + "/fastLK/simulations/subsamples/" + str(j) + 'subsamples/'  # +"subsamples/"
+				pathWrite = "/nfs/research/goldman/" + writeFileUser + "/fastLK/simulations/subsamples/" + str(j) + 'subsamples/'
+				fileName = "diffFile_repeat\"$i\"_"+str(j)+"samples_Ns" + "_errors"+ str(simulationErrorRate) + ".txt" #if errorRate else "diffFile_repeat\"$i\"_"+str(j)+"samples_Ns"  + ".txt"
+				treeFile = "treeFile_repeat\"$i\"_" + str(j) +"samples.nw"
+				# possible to do remove existing result if already exists - this helps in case of re-running an analysis, and in case the new version fails, to wrongly use the old tree as estimate of the new version.
+				# run MAPLE
+				file.write("for i in $(seq 1 10)\n do\n\t")
+				file.write("bsub -M " + str(int(400 + j / 20))
+				            + " -o " + console_output
+				            + " -e " + console_errors
+				            + " /hps/software/users/goldman/pypy3/pypy3.7-v7.3.5-linux64/bin/pypy3 " + folderNameCode +"MAPLEv" + version + ".py "
+				            + " --input " + pathWrite + fileName
+							+ " --errorRate " + str(inferenceErrorRate)
+							+ " --benchmarkingFile " + folderNameCode+"results/" + resultFile
+							+ " --trueTree " + pathRead + treeFile
+				            + " --calculateLKfinalTree --overwrite"
+				            + " --output " + pathWrite + "outputFile_infError_" + str(inferenceErrorRate) + fileName[8:]
+				            + "\n")
+				file.write("done\n\n")
+file.close()
+print("Created MAPLE bash script submitMAPLEv" + version + ".sh")
 
---benchmarkingFile  benchmarkingFile.txt
---inputTree         the true trees
 
---input
-fastaFile_repeat1_100samples_withRef_Ns_errors.txt
---overwrite
---output
-output/output
---errorRate
-0.0005
---calculateLKfinalTree
---inputTree
-data/treeFile_repeat1_100samples.nw
---benchmarkingFile
-benchmarkingFile.tsv
+
+
+# for file siez 5000, rate 0.0001, only 4 results exist.
+
+# MAPLE_options_errortesting = {"--benchmarkingFile ": 'benchmarkingFile.txt' --calculateLKfinalTree True }
+#
+# --input fastaFile_repeat1_100samples_withRef_Ns_errors.txt
+# --overwrite
+# --output output/output + input #dependend on input
+# --errorRate 0.0005 #dependend on error rate.
+# --calculateLKfinalTree True
+# --trueTree data/treeFile_repeat1_100samples.nw #dependend on input
+# --benchmarkingFile benchmarkingFile.tsv
 
 
 #######################
