@@ -1,5 +1,3 @@
-#import numpy as np
-# import os
 import random
 import argparse
 from sys import exit
@@ -41,9 +39,7 @@ def simulateErrors(file, errorRate=0.0005, siteSpecific=None, trim_seqlength=Fal
             if siteSpecific:
                 errorRate=siteSpecific[i]
             if seq[i] != 'N' and seq[i] != 'n' and random.random() < errorRate:  # error is True with prob = errorRate[pos],
-                seq_errors.append(random.sample(population=alphabet - {seq[i]}, k=1)[0])
-                #population = alphabet - {seq[i]}
-                #seq_errors.append(np.random.sample(population= alphabet -{ seq[i]}, k=1)[0]) # sample from other nucleotides { }- current nucleotide. Question: sample all with equal probabilities, as would be with a homogenous model?
+                seq_errors.append(random.sample(population=alphabet - {seq[i]}, k=1)[0]) # sample from other nucleotides, except from the current nucleotide
             else:
                 seq_errors.append(seq[i])
         if trim_seqlength:
@@ -53,17 +49,14 @@ def simulateErrors(file, errorRate=0.0005, siteSpecific=None, trim_seqlength=Fal
 
     fileO.close()
 
-def siteSpecificErrors(errorRate, lRef, seed=1):
+def siteSpecificErrors(errorRate, lRef):
     """
     position specific error rate: sample a distribution to find position specific errorRates with an average of errorRate.
     :param seed: seed to sample error rates
     :param lRef: length of reference
     :return: array with position specific error rates
     """
-    siteSpecificErrorRates = [random.expovariate(1 / errorRate) for i in range(lRef)]
-    # import numpy as np
-    # np.random.seed(seed)
-    # siteSpecificErrorRates = [np.random.exponential(scale=errorRate, size=None) for i in range(lRef)] #scale --> errorRate, [Kozlov]
+    siteSpecificErrorRates = [random.expovariate(1 / errorRate) for i in range(lRef)] # sample from an exponential distribution with the scale equal to the error rate[Kozlov, 2018]
     scaling_factor = errorRate/sum(siteSpecificErrorRates)*len(siteSpecificErrorRates)
     siteSpecificErrorRates = [item*scaling_factor for item in siteSpecificErrorRates] # making sure the average equals the errorRate
     return siteSpecificErrorRates
@@ -84,21 +77,23 @@ def getLRef(file):
     fileI.close()
     return(len(seq))
 
-parser = argparse.ArgumentParser(description='Estimate a tree from a diff format and using iterative approximate maximum likelihood sample placement.')
-parser.add_argument('--input',default="/Users/demaio/Desktop/GISAID-hCoV-19-phylogeny-2021-03-12/phylogenetic_inference/2021-03-31_unmasked_differences_reduced.txt_consensus-based.txt", help='input MAPLE file name; should contain first the reference genome and then the difference of all samples with respet to the reference.')
-parser.add_argument('--output',default=None)
-parser.add_argument('--errorRate',type=float, default=0.0005)
-parser.add_argument('--siteSpecific',default=False, action="store_true")
+parser = argparse.ArgumentParser(description='Simulate random errors in a fasta file')
+parser.add_argument('--input', default=" ", help='input folder and file name should not contain a reference genome. Should be in FASTA format.')
+parser.add_argument('--output', default=None, help="output folder and file name")
+parser.add_argument('--errorRate', type=float, default=0.0005, help="Provide an error rate, which can be interpreted as the probability of an error to be introduced at a certain position")
+parser.add_argument('--siteSpecific', default=False, action="store_true", help="Use '--siteSpecific True' to simulate site specific errors in the data. "
+                                                                               "Site specific error rates will be drawn from an exponential distribution with error rate (should be provided through --errorRate) "
+                                                                               "as scale parameter. A file with the site specific errors will be stored (outputFile[:-3] + _siteSpecificErrors.txt)")
 args = parser.parse_args()
 file = args.input
 outputFile = args.output
 errorRate = args.errorRate
 
 if args.siteSpecific:
-    if errorRate ==0: # possible extensions is to allow for an input file of sitespecific errors
+    if errorRate ==0: # A possible useful extension could be to allow for an input file of sitespecific errors
         raise Exception("please provide a non-zero error rate when using a site specific error rate")
-    siteSpecific = siteSpecificErrors(errorRate, lRef=getLRef(file), seed=1)
-    fileO=open(outputFile[:-3] + "_siteSpecificErrors.txt","w") #expecting a fasta extension to outputfile
+    siteSpecific = siteSpecificErrors(errorRate, lRef=getLRef(file))
+    fileO=open(outputFile[:-3] + "_siteSpecificErrors.txt","w") #The expected a fasta extension to outputfile is trimmed of.
     fileO.write( ", ".join([str(item) for item in siteSpecific]) )
     fileO.close()
 else:

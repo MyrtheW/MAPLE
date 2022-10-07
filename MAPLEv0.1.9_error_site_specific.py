@@ -80,12 +80,13 @@ parser.add_argument("--noOptimizeBranchLengths", help="Don't run a final round o
 parser.add_argument("--rateVariation", help="Estimate and use rate variation: the model assumes one rate per site, and the rates are assumed independently (no rate categories). This might cause overfitting if the dataset is not large enough, but in any case one would probably only use MAPLE for large enough datasets.", action="store_true")
 parser.add_argument("--minBLenSensitivity",help="Fraction of a mutation to be considered as a precision for branch length estimation (default 0.001, which means branch lengths estimated up to a 1000th of a mutation precision).",  type=float, default=0.001)
 parser.add_argument("--factorOptimizePlacementLKvsSearchLK",help="Parameter that determines for how many nodes visited to perform branch length optimization before performing SPR etc. Default 0.04 means we use a log-LK threshold 25 times smaller than in the default tree traversal.",  type=float, default=0.04)
-parser.add_argument("--errorRate", help="", type=float, default=0.005)
+
+# Error rate additional parameters:
+parser.add_argument("--errorRate", help="", type=float, default=0, help="Provide an error rate to be used during the inference")
 parser.add_argument("--errorRateSiteSpecific", help="provide a file directory to a file that contains the siteSpecific error rates", type=str, default=None) #errorRateSiteSpecific
-parser.add_argument("--errorTesting", help="", type=bool, default=False)
-parser.add_argument("--genomeLength", help="", type=float, default=0)
-parser.add_argument("--benchmarkingFile", help="", type=str, default=None) # "benchmarkingFile.tsv"
-parser.add_argument("--trueTree", help="", type=str, default=None)
+parser.add_argument("--genomeLength", help="", type=float, default=0, help="When you wish to calculate the RF(L) distances after your tree(s) have been inferred, provide the genomelength used to scale the branch lengths in the newick file of the true tree.")
+parser.add_argument("--benchmarkingFile", help="", type=str, default=None, help="If you want the results to be stored in a comparable format, provide a tsv file and the path to it, e.g. 'results/benchmarkingFile.tsv'. For this analysis you should also provide the true tree. ")
+parser.add_argument("--trueTree", help="", type=str, default=None, help="Provide the path and filename to newick file of the true tree that should be used for calculating the RF and RFL distance")
 
 args = parser.parse_args()
 
@@ -146,7 +147,6 @@ inputTree=args.inputTree
 inputRFtrees=args.inputRFtrees
 largeUpdate=args.largeUpdate
 rateVariation=args.rateVariation
-errorTesting = args.errorTesting
 genomeLength = args.genomeLength
 benchmarkingFile=args.benchmarkingFile
 trueTree=args.trueTree
@@ -3810,10 +3810,6 @@ def cutAndPasteNode(node,bestNode,bestBranchLengths,bestLK,mutMatrix,useRateVari
         #print(sibling.up); #print("And subtree "+createBinaryNewick(sibling))
     #if the root of the tree has changed, return the new root
 
-    # root = node #remove
-    # while root.up != None:
-    #     root = root.up
-    # reCalculateAllGenomeLists(root, mutMatrix, checkExistingAreCorrect=True, useRateVariation=useRateVariation, mutMatrices=mutMatrices) #toto check recaclulate tree, see if all partials have been updated correctly.
     if sibling.up==None:
         return sibling
     else:
@@ -3844,7 +3840,7 @@ def traverseTreeForTopologyUpdate(node,mutMatrix,strictTopologyStopRules=strictT
             child=1
             vectUp=parentNode.probVectUpLeft
         #score of current tree
-        bestOriginalBLen=node.dist #remove
+        bestOriginalBLen=node.dist
         bestCurrenBLen=node.dist
         originalLK=appendProbNode(vectUp,node.probVect,bestCurrenBLen,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices, node2isleaf=(node.children==[]))
         bestCurrentLK=originalLK
@@ -3853,7 +3849,7 @@ def traverseTreeForTopologyUpdate(node,mutMatrix,strictTopologyStopRules=strictT
             if bestCurrenBLen or node.dist:
                 bestCurrentLK=appendProbNode(vectUp,node.probVect,bestCurrenBLen,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices, node2isleaf=(node.children==[]))
                 if (not bestCurrenBLen) or (not node.dist) or node.dist/bestCurrenBLen>1.01 or node.dist/bestCurrenBLen<0.99:
-                    bLenChanged=True; totalImprovement = bestCurrentLK - originalLK #remove
+                    bLenChanged=True; totalImprovement = bestCurrentLK - originalLK
         topologyUpdated=False
         if bestCurrentLK<thresholdTopologyPlacement:
             #now find the best place on the tree where to re-attach the subtree rooted ar "node"
@@ -3969,7 +3965,6 @@ def startTopologyUpdates(node,mutMatrix,checkEachSPR=False,strictTopologyStopRul
                 root=newNode
                 while root.up!=None:
                     root=root.up
-                reCalculateAllGenomeLists(root,mutMatrix, checkExistingAreCorrect=True,useRateVariation=useRateVariation,mutMatrices=mutMatrices) #remove               #print("Post-SPR tree: "+createBinaryNewick(root))
                 newTreeLK=calculateTreeLikelihood(root,mutMatrix,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
                 reCalculateAllGenomeLists(root,mutMatrix, checkExistingAreCorrect=True,useRateVariation=useRateVariation,mutMatrices=mutMatrices)
                 #print("Post-SPR tree likelihood: "+str(newTreeLK))
@@ -4119,13 +4114,7 @@ def calculateTreeLikelihood(root,mutMatrix,checkCorrectness=False,useRateVariati
                                                       node.children[1].probVect,node.children[1].dist,mutMatrix,
                                                       returnLK=True,useRateVariation=useRateVariation,mutMatrices=mutMatrices,
                                                       node1isleaf=node.children[0].children==[], node2isleaf=node.children[1].children==[])
-                #remove, only for debuggin:
-                # for i in [0,1]:
-                #     if hasattr(node.children[i], 'name'):
-                #         if node.children[i].name in ['S155', 'S104', 'S155', 'S121']:
-                #             print(node.children)
-                #             print(Lkcontribution)
-                # print('x', Lkcontribution)
+
                 totalLK+=Lkcontribution
                 if newLower==None:
                     print("Strange, inconsistent lower genome list creation in calculateTreeLikelihood(); "
@@ -4876,6 +4865,7 @@ def findProbRootError(probVect):
     """
     The errorrate version of 'findProbRootError'.
     """
+    global errorRate
     logLK=0.0
     logFactor=1.0
     pos=0
@@ -4903,7 +4893,7 @@ def appendProbNodeErrorRate(probVectP,probVectC,bLen,mutMatrix,useRateVariation=
     The errorrate version of 'appendProbNode'.
     :param node2isleaf: True if probVectC arrives from a leaf node. (probVectP can never arrive from a leaf node)
     """
-    lRef = probVectP[-1][1]
+    global errorRate
     Lkcost, indexEntry1, indexEntry2, totalFactor, pos = 0.0, 0, 0, 1.0, 0
     entry1=probVectP[indexEntry1]
     entry2=probVectC[indexEntry2]
@@ -5117,6 +5107,7 @@ def mergeVectorsUpDownErrorDetection(probVect1,bLenUp,probVect2,bLenDown,mutMatr
     """
     This function is used to aid error detection, to calculate the overall likelihood vectors of leaf nodes.
     """
+    global errorRate
     indexEntry1, indexEntry2, pos = 0, 0, 0
     probVect=[]
     entry1=probVect1[indexEntry1]
@@ -5400,6 +5391,7 @@ def mergeVectorsUpDownError(probVect1,bLenUp,probVect2,bLenDown,mutMatrix,useRat
     The errorrate version of 'mergeVectorsUpDownError'.
     :param node2isleaf: True if probVect2 arrives from a leaf node. (probVect1 can never arrive from a leaf node)
     """
+    global errorRate
     indexEntry1, indexEntry2, pos = 0, 0, 0
     probVect=[]
     entry1=probVect1[indexEntry1]
@@ -5697,6 +5689,7 @@ def mergeVectorsError(probVect1, bLen1, probVect2, bLen2, mutMatrix, returnLK=Fa
     :param node1isleaf: True if probVect1 arrives from a leaf node
     :param node2isleaf: True if probVect2 arrives from a leaf node
     """
+    global errorRate
     indexEntry1, indexEntry2, pos = 0, 0, 0
     probVect = []
     cumulPartLk = 0.0
@@ -5743,8 +5736,6 @@ def mergeVectorsError(probVect1, bLen1, probVect2, bLen2, mutMatrix, returnLK=Fa
                     else: #0-branch length: no need to set the flag
                         probVect.append((entry1[0], pos))
                 else:
-                    assert (type(entry1[-1]) == bool) #remove
-                    assert (len(entry1) == 4) #remove
                     if bLen1:
                         probVect.append((entry1[0], pos, entry1[2] + bLen1, entry1[3])) #set flag = flag1 (entry1[3])
                     else:
@@ -6187,7 +6178,7 @@ def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,us
     The errorrate version of 'estimateBranchLengthWithDerivative',
     :param node2isleaf: True if probVectC is from a leaf node.
     """
-    lRef = probVectP[-1][1]
+    global errorRate
     c1=0.0
     ais=[]
     indexEntry1, indexEntry2, pos = 0, 0, 0
@@ -6197,7 +6188,7 @@ def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,us
     while True:
         flag1, flag2 = getFlag(entry1, isLeaf=False), getFlag(entry2, isLeaf=node2isleaf)
         if errorRateSiteSpecific: errorRate = errorRates[pos]
-        if entry2[0]==5: # case entry1 is N
+        if entry2[0]==5: # case entry1 is NS
             pos=min(entry1[1],entry2[1]) #no error rate ?
             pass
         elif entry1[0]==5: # case entry2 is N
@@ -6339,7 +6330,7 @@ def errorRateEstimateBranchLengthWithDerivative(probVectP,probVectC,mutMatrix,us
                             #second if statment that only does this approximation if the other terms are small
                             coeff0 = entry1[-1][i2]
                             if contribLength:
-                                coeff0 += coeff1 * contribLength  #REMOVE: I temperorarly added this: otherwise not be the same as the normal function for cases where error rate =0
+                                coeff0 += coeff1 * contribLength  #I temperorarly added this: otherwise not be the same as the normal function for cases where error rate =0
                             c1 += coeff1/coeff0
                         elif coeff1:
                             coeff0 = (entry1[-1][i2]+ 1/3*errorRate*(1-4*entry1[-1][i2]))/coeff1 + contribLength
@@ -7047,26 +7038,28 @@ if benchmarkingFile:
 
     if not os.path.exists(benchmarkingFile): # write a header if the file does not yet exist.
         file = open(benchmarkingFile, "w")
-        file.write( "time\t"  +"inputFile\t" + "repeat\t" + "errorRateInEstimation\t" + "errorRateInSimulation\t" + "siteSpecific\t" +   "lRef\t"+ "leaves\t" + "||\t" +
+        file.write( "timeOfJob\t"  +"inputFile\t" + "repeat\t" + "errorRateInInference\t" + "errorRateInSimulation\t" + "siteSpecificInference\t" + "siteSpecificSimulation\t"  +"lRef\t"+ "leaves\t" + "||\t" +
                     "runtime\t" + "LK\t" + "RF\t" + "normalisedRF\t" + "foundBranches\t" + "missedBranches\t" + "notFoundBranches\t" + "RFL\t" + "totalBranchLength\t" + "totalBranchLengthTrue\n")
         file.close()
+    repeat = "None"
+    errorRateSimulated = "None"
+    errorRateSiteSpecificSimulated = False
     try:
         splitFileName = inputFile[:-4].split("_")
-        repeat = "None"
-        errorRateSimulated = "None"
         for item in splitFileName:
             if 'repeat' in item:
                 repeat = item[6:]
             elif 'errors' in item:
                 errorRateSimulated = item[6:]
+            elif 'sitespecific' in item:
+                errorRateSiteSpecificSimulated = True
     except:
-        repeat = "None"
-        errorRateSimulated = "None"
+        None
     file = open(benchmarkingFile, "a")
-    file.write(str(time()) + "\t" + str(inputFile) + "\t" + repeat + "\t" + str(errorRate) + "\t"   + str(errorRateSiteSpecific) + "\t"  + errorRateSimulated +  "\t"  + str(lRef) + "\t" + str(leafCount) + "\t||\t" +
+    file.write(str(time()) + "\t" + str(inputFile) + "\t" + repeat + "\t" + str(errorRate) + "\t"  + str(errorRateSimulated) + "\t"   + str(bool(errorRateSiteSpecific)) + "\t" +  str(bool(errorRateSiteSpecificSimulated)) +  "\t"  + str(lRef) + "\t" + str(leafCount) + "\t||\t" +
                str(runTime) + "\t" + str(totalLK) + "\t" + str(numDiffs) + "\t" + str(normalisedRF)  + "\t" + str(foundBranches) + "\t" + str(missedBranches) + "\t" + str(notFoundBranches) + "\t" + str(RFL) + "\t" + str(totBlenEstimated)+ "\t"  + str(totBlenTrue)+ "\n")
-    print((str(time()) + "\t" + str(inputFile) + "\t" + repeat + "\t" + str(errorRate) + "\t" +str(errorRateSiteSpecific) + "\t"  + errorRateSimulated +  "\t"  + str(lRef) + "\t" + str(leafCount) + "\t||\t" +
-               str(runTime) + "\t" + str(totalLK) + "\t" + str(numDiffs) + "\t" + str(normalisedRF)  + "\t" + str(foundBranches) + "\t" + str(missedBranches) + "\t" + str(notFoundBranches) + "\t" + str(RFL) + "\t" + str(totBlenEstimated)+ "\t"  + str(totBlenTrue)+ "\n"))
+    print(str(time()) + "\t" + str(inputFile) + "\t" + repeat + "\t" + str(errorRate) + "\t"  + str(errorRateSimulated) + "\t"   + str(bool(errorRateSiteSpecific)) + "\t" +  str(bool(errorRateSiteSpecificSimulated)) +  "\t"  + str(lRef) + "\t" + str(leafCount) + "\t||\t" +
+               str(runTime) + "\t" + str(totalLK) + "\t" + str(numDiffs) + "\t" + str(normalisedRF)  + "\t" + str(foundBranches) + "\t" + str(missedBranches) + "\t" + str(notFoundBranches) + "\t" + str(RFL) + "\t" + str(totBlenEstimated)+ "\t"  + str(totBlenTrue)+ "\n")
     file.close()
 
 ############################

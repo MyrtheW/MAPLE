@@ -90,7 +90,7 @@ parser.add_argument("--fast", help="Set parameters so to run tree inference fast
 parser.add_argument("--noFastTopologyInitialSearch", help="Don't run a fast short-range topology search before the extensive one.", action="store_true")
 parser.add_argument("--noOptimizeBranchLengths", help="Don't run a final round of detailed branch length optimization.", action="store_true")
 parser.add_argument("--rateVariation", help="Estimate and use rate variation: the model assumes one rate per site, and the rates are assumed independently (no rate categories). This might cause overfitting if the dataset is not large enough, but in any case one would probably only use MAPLE for large enough datasets.", action="store_true")
-parser.add_argument("--errorRate", help="", type=float, default=0.005)
+parser.add_argument("--errorRate", help="", type=float, default=0)
 parser.add_argument("--errorTesting", help="", type=bool, default=False)
 parser.add_argument("--genomeLength", help="", type=float, default=0)
 parser.add_argument("--benchmarkingFile", help="", type=str, default=None) # "benchmarkingFile.tsv"
