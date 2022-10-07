@@ -60,10 +60,11 @@ def siteSpecificErrors(errorRate, lRef, seed=1):
     :param lRef: length of reference
     :return: array with position specific error rates
     """
-    import numpy as np
-    np.random.seed(seed)
-    siteSpecificErrorRates = [np.random.exponential(scale=errorRate, size=None) for i in range(lRef)] #scale --> errorRate, [Kozlov]
-    scaling_factor = errorRate/np.average(siteSpecificErrorRates)
+    siteSpecificErrorRates = [random.expovariate(1 / errorRate) for i in range(lRef)]
+    # import numpy as np
+    # np.random.seed(seed)
+    # siteSpecificErrorRates = [np.random.exponential(scale=errorRate, size=None) for i in range(lRef)] #scale --> errorRate, [Kozlov]
+    scaling_factor = errorRate/sum(siteSpecificErrorRates)*len(siteSpecificErrorRates)
     siteSpecificErrorRates = [item*scaling_factor for item in siteSpecificErrorRates] # making sure the average equals the errorRate
     return siteSpecificErrorRates
 
@@ -97,7 +98,7 @@ if args.siteSpecific:
     if errorRate ==0: # possible extensions is to allow for an input file of sitespecific errors
         raise Exception("please provide a non-zero error rate when using a site specific error rate")
     siteSpecific = siteSpecificErrors(errorRate, lRef=getLRef(file), seed=1)
-    fileO=open(file[:-3] + "_siteSpecificErrors.txt","w")
+    fileO=open(outputFile[:-3] + "_siteSpecificErrors.txt","w") #expecting a fasta extension to outputfile
     fileO.write( ", ".join([str(item) for item in siteSpecific]) )
     fileO.close()
 else:

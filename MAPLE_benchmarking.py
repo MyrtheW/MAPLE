@@ -1520,19 +1520,23 @@ file= open("simulateErrors.sh","w") #open("/Users/demaio/Desktop/GISAID-hCoV-19-
 file.write("rm -r " + console_output + "\n")# + "; mkdir " + console_output + "\n")
 file.write("rm -r " + console_errors + "\n")#+"; mkdir " + console_errors + "\n")
 file.write(" \n#SIMULATE ERRORS \n")
+# file.write("""
+# module load python-3.10.2-gcc-9.3.0-gswnsij
+# module load py-numpy-1.19.4-gcc-9.3.0-x2neh6p
+# """)
 for errorRate in errorRates:
 	if errorRate: #errorRate should not be 0.
 		for j in sampleSizes:
 			pathRead = "/nfs/research/goldman/"+ readFileUser + "/fastLK/simulations/subsamples/" + str(j) + 'subsamples/' #+"subsamples/"
 			pathWrite = "/nfs/research/goldman/"+ writeFileUser + "/fastLK/simulations/subsamples/" + str(j) + 'subsamples/' #+"subsamples/"
 			fileNameIn = "fastaFile_repeat\"$i\"_"+str(j)+"samples_Ns.fa"
-			fileNameOut = "fastaFile_repeat\"$i\"_"+str(j)+"samples_Ns_errors"+ str(errorRate) + ".fa"
+			fileNameOut = "fastaFile_repeat\"$i\"_"+str(j)+"samples_Ns_"+ "sitespecific_"+ "errors"+ str(errorRate) + ".fa"
 			file.write("for i in $(seq 1 "+str(nRepeatsSimu)+")\n"+"do \n\t"
 				          + "mkdir -p " + pathWrite + "\n\t"
 			           # perhaps make sure we only do so if it doesn't exist already.
 						+"bsub -M " +str(int(400+j/2))+" -o "+ console_output + " -e " + console_errors # job creation ; output file and error file. ,
-			            + " /hps/software/users/goldman/pypy3/pypy3.7-v7.3.5-linux64/bin/pypy3 "
-			            +  folderNameCode + "MAPLE_simulate_errors.py " #when using python instead?
+			           + " /hps/software/users/goldman/pypy3/pypy3.7-v7.3.5-linux64/bin/pypy3 "
+			           +  folderNameCode + "MAPLE_simulate_errors.py " #when using python instead?
 					    + " --input " + pathRead + fileNameIn
 			           + " --output " + pathWrite + fileNameOut
 			           + " --siteSpecific "
@@ -1542,18 +1546,22 @@ for errorRate in errorRates:
 
 """CALL MAPLE FILE""" #Myrthe
 #fixing the accidental overwriting of some small MAPLE files
+
 file.write(" \n#CREATE MAPLE FILES \n")
 for errorRate in errorRates:
-	#if errorRate:
+	for siteSpecific in [True, False]:
+		if siteSpecific and not errorRate:
+			continue
 		for j in sampleSizes:
 			pathWrite = "/nfs/research/goldman/"+ writeFileUser + "/fastLK/simulations/subsamples/" + str(j) + 'subsamples/' #+"subsamples/"
-			fileNameIn = "fastaFile_repeat\"$i\"_"+str(j)+"samples_Ns_errors"+ str(errorRate) + ".fa"
-			fileNameOut = "diffFile_repeat\"$i\"_"+str(j)+"samples_Ns_errors"+ str(errorRate) + ".txt"
+			fileNameIn = "fastaFile_repeat\"$i\"_"+str(j)+"samples_Ns_"+ ("sitespecific_"if siteSpecific else '')+ "errors"+ str(errorRate) + ".fa"
+			fileNameOut = "diffFile_repeat\"$i\"_"+str(j)+"samples_Ns_"+ ("sitespecific_"if siteSpecific else '')+ "errors"+ str(errorRate) + ".txt"
 			file.write("for i in $(seq 1 "+str(nRepeatsSimu)+")\n"+"do \n\t"
 			           #+ "mkdir -p " + pathWrite + "\n\t"
 			           + "bsub -M "+str(int(400+j/2))+" -o "+ console_output
 				+" -e " + console_errors
-				+" /hps/software/users/goldman/pypy3/pypy3.7-v7.3.5-linux64/bin/pypy3 /nfs/research/goldman/demaio/fastLK/code/createMapleFile.py "
+				+" /hps/software/users/goldman/pypy3/pypy3.7-v7.3.5-linux64/bin/pypy3 "
+				+ "/nfs/research/goldman/demaio/fastLK/code/createMapleFile.py "
 				+" --path " + pathWrite
 				+" --fasta " + fileNameIn
 				+" --output " + fileNameOut
@@ -1561,13 +1569,16 @@ for errorRate in errorRates:
 				+"done\n\n")#--reference MN908947.3.fasta
 file.close()
 
+
+
+"""Check if files exist"""
 j=5000
 errorRate = 0.0001
 filename = "diffFile_repeat\"$i\"_"+str(j)+"samples_Ns_errors"+ str(errorRate) + ".txt"
 pathWrite = "/nfs/research/goldman/" + writeFileUser + "/fastLK/simulations/subsamples/" + str(
 	j) + 'subsamples/'  # +"subsamples/"
 
-# Check if files exist
+
 print("for i in $(seq 1 10)\n" + "do \n\t",
       "FILE= ", pathWrite + filename,
       """
